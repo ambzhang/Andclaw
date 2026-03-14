@@ -71,6 +71,8 @@
 
    通过 ADB 激活（仅首次设置需要），激活后 Andclaw 获得企业级设备管理能力：
 
+   > ⚠️ **重要**：由于 Android 安全限制，设备必须先**恢复出厂设置**才能启用 Device Owner 模式。已有用户账户的设备将无法激活。
+
    ```bash
    adb shell dpm set-device-owner com.andforce.andclaw/.DeviceAdminReceiver
    ```
