@@ -7,8 +7,15 @@
 [![Android](https://img.shields.io/badge/Android-12%2B-brightgreen?logo=android)](https://www.android.com/)
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.3.10-blue?logo=kotlin)](https://kotlinlang.org/)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Website](https://img.shields.io/badge/官网-andclaw.app-blue?logo=googlechrome&logoColor=white)](https://andclaw.app/)
+[![Install](https://img.shields.io/badge/在线安装-立即下载-green?logo=android&logoColor=white)](https://andclaw.app/#/install)
 
 > **让 AI 像人类一样使用你的手机** —— 完全在设备上运行，无需 Root，无需电脑。
+
+<p align="center">
+  <a href="https://andclaw.app/"><b>🌐 官方网站</b></a> &nbsp;|&nbsp;
+  <a href="https://andclaw.app/#/install"><b>📲 在线安装 APK</b></a>
+</p>
 
 ---
 
@@ -42,7 +49,13 @@
 - **悬浮窗权限**: 用于显示紧急停止按钮
 - **API Key**: 从 [Kimi](https://platform.moonshot.cn/) 或任意 OpenAI 兼容 API 提供商获取
 
-### 编译/安装步骤
+### 安装方式
+
+**方式一：在线安装（推荐）**
+
+直接访问 [andclaw.app/#/install](https://andclaw.app/#/install)，用手机浏览器打开即可下载安装 APK。
+
+**方式二：从源码编译**
 
 1. **克隆仓库**
    ```bash
