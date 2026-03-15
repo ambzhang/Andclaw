@@ -51,9 +51,9 @@
 
 ### 安装方式
 
-**方式一：在线安装（推荐）**
+**方式一：在线安装使用Chrome浏览器（推荐）**
 
-直接访问 [andclaw.app/#/install](https://andclaw.app/#/install)，用手机浏览器打开即可下载安装 APK。
+使用Chrome浏览器直接访问 [andclaw.app/#/install](https://andclaw.app/#/install)，然后按提示操作即可。
 
 **方式二：从源码编译**
 
