@@ -22,13 +22,14 @@ object KioskModeHelper {
         KoinJavaComponent.get(IAppInfoService::class.java)
     }
 
-    private val KIOSK_USER_RESTRICTIONS = arrayOf(
-        UserManager.DISALLOW_SAFE_BOOT,
-        UserManager.DISALLOW_FACTORY_RESET,
-        UserManager.DISALLOW_ADD_USER,
-        UserManager.DISALLOW_MOUNT_PHYSICAL_MEDIA,
-        UserManager.DISALLOW_DEBUGGING_FEATURES
-    )
+    private val KIOSK_USER_RESTRICTIONS = emptyList<String>()
+//        arrayOf(
+//        UserManager.DISALLOW_SAFE_BOOT,
+//        UserManager.DISALLOW_FACTORY_RESET,
+//        UserManager.DISALLOW_ADD_USER,
+//        UserManager.DISALLOW_MOUNT_PHYSICAL_MEDIA,
+//        UserManager.DISALLOW_DEBUGGING_FEATURES
+//    )
 
     private fun setUserRestriction(restriction: String, disallow: Boolean) {
         val devicePolicyManager = this.getAppContext().getSystemService(DEVICE_POLICY_SERVICE) as DevicePolicyManager
@@ -47,29 +48,29 @@ object KioskModeHelper {
         // restore or save previous configuration
         if (active) {
             saveCurrentConfiguration()
-            setUserRestriction(UserManager.DISALLOW_SAFE_BOOT, active)
-            setUserRestriction(UserManager.DISALLOW_FACTORY_RESET, active)
-            setUserRestriction(UserManager.DISALLOW_ADD_USER, active)
-            setUserRestriction(UserManager.DISALLOW_MOUNT_PHYSICAL_MEDIA, active)
+            // setUserRestriction(UserManager.DISALLOW_SAFE_BOOT, active)
+            // setUserRestriction(UserManager.DISALLOW_FACTORY_RESET, active)
+            // setUserRestriction(UserManager.DISALLOW_ADD_USER, active)
+            // setUserRestriction(UserManager.DISALLOW_MOUNT_PHYSICAL_MEDIA, active)
 
-            Log.d(TAG, "setDefaultKioskPolicies: isDebug = ${appInfoService.isDebug()}")
+            // Log.d(TAG, "setDefaultKioskPolicies: isDebug = ${appInfoService.isDebug()}")
 
-            // 如果是 release 版本，禁用调试功能
-            if (!appInfoService.isDebug()) {
-                Log.d(TAG, "setDefaultKioskPolicies: DISALLOW_DEBUGGING_FEATURES")
-                setUserRestriction(UserManager.DISALLOW_DEBUGGING_FEATURES, active)
-                // 禁用 USB 调试
-                Log.d(TAG, "setDefaultKioskPolicies: set ADB_ENABLED to 0")
-                val adminComponentName = DeviceAdminReceiver.getComponentName(this.getAppContext())
-                adminComponentName?.let {
-                    devicePolicyManager.setGlobalSetting(adminComponentName, Global.ADB_ENABLED, "0")
-                    devicePolicyManager.setGlobalSetting(
-                        adminComponentName,
-                        Global.DEVELOPMENT_SETTINGS_ENABLED,
-                        "0"
-                    )
-                }
-            }
+            // // 如果是 release 版本，禁用调试功能
+            // if (!appInfoService.isDebug()) {
+            //     Log.d(TAG, "setDefaultKioskPolicies: DISALLOW_DEBUGGING_FEATURES")
+            //     setUserRestriction(UserManager.DISALLOW_DEBUGGING_FEATURES, active)
+            //     // 禁用 USB 调试
+            //     Log.d(TAG, "setDefaultKioskPolicies: set ADB_ENABLED to 0")
+            //     val adminComponentName = DeviceAdminReceiver.getComponentName(this.getAppContext())
+            //     adminComponentName?.let {
+            //         devicePolicyManager.setGlobalSetting(adminComponentName, Global.ADB_ENABLED, "0")
+            //         devicePolicyManager.setGlobalSetting(
+            //             adminComponentName,
+            //             Global.DEVELOPMENT_SETTINGS_ENABLED,
+            //             "0"
+            //         )
+            //     }
+            // }
 
         } else {
             Log.d(TAG, "setDefaultKioskPolicies: restorePreviousConfiguration()")
