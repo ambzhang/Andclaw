@@ -36,7 +36,8 @@
 
 ## 📱 演示
 
-[![演示视频](docs/demo_cover.png)](https://www.bilibili.com/video/BV1k8w4zeEL7)
+[![演示视频](docs/demo_cover.png)](https://www.bilibili.com/video/BV1k8w4zeEL7)  
+[![演示视频](docs/ScreenShot_2026-03-17_202610_426.png)](https://www.bilibili.com/video/BV1WtwKzLEXd)
 
 ---
 
