@@ -154,6 +154,13 @@ object AgentController : ITgBridgeService, IAiConfigService {
 
         tgBotClient = TgBotClient(token)
 
+        scope.launch(Dispatchers.IO) {
+            tgBotClient?.setMyCommands(listOf(
+                "status" to "查看 Andclaw 运行状态",
+                "stop" to "停止当前任务"
+            ))
+        }
+
         tgJob?.cancel()
         tgJob = scope.launch(Dispatchers.IO) {
             while (isActive) {

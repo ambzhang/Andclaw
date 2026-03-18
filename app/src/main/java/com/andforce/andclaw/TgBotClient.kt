@@ -7,6 +7,7 @@ import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 
@@ -60,6 +61,22 @@ class TgBotClient(private val token: String) {
                 out
             }
         }.getOrElse { emptyList() }
+    }
+
+    suspend fun setMyCommands(commands: List<Pair<String, String>>) = withContext(Dispatchers.IO) {
+        val cmds = JSONArray()
+        for ((cmd, desc) in commands) {
+            cmds.put(JSONObject().apply {
+                put("command", cmd)
+                put("description", desc)
+            })
+        }
+        val payload = JSONObject().apply { put("commands", cmds) }
+        val req = Request.Builder()
+            .url("$base/setMyCommands")
+            .post(payload.toString().toRequestBody("application/json".toMediaType()))
+            .build()
+        runCatching { client.newCall(req).execute().use { } }
     }
 
     suspend fun sendTyping(chatId: Long) = withContext(Dispatchers.IO) {
