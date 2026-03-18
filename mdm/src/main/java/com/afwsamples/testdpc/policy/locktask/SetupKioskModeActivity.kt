@@ -27,6 +27,7 @@ import com.afwsamples.testdpc.DevicePolicyManagerGatewayImpl
 import com.afwsamples.testdpc.databinding.ActivitySetupKioskLayoutBinding
 import com.afwsamples.testdpc.policy.locktask.viewmodule.KioskViewModule
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.base.services.BridgeStatus
 import com.base.services.IAiConfigService
 import com.base.services.ITgBridgeService
 import kotlinx.coroutines.launch
@@ -102,6 +103,10 @@ open class SetupKioskModeActivity : AppCompatActivity() {
                 openAiSettings()
             }
 
+            binding.setupTg.setOnClickListener {
+                openAiSettings()
+            }
+
         }
 
         connectivityManager = getSystemService(CONNECTIVITY_SERVICE) as ConnectivityManager
@@ -158,6 +163,24 @@ open class SetupKioskModeActivity : AppCompatActivity() {
                     setupDeviceOwner.visibility = View.VISIBLE
                 }
 
+            }
+        }
+
+        // 监听 Telegram 连接状态
+        lifecycleScope.launch {
+            tgBridgeService.bridgeStatus.collect { status ->
+                binding?.apply {
+                    tgStatus.text = when (status) {
+                        BridgeStatus.NOT_CONFIGURED -> "未配置"
+                        BridgeStatus.STOPPED -> "已停止"
+                        BridgeStatus.CONNECTED -> "已连接"
+                        BridgeStatus.DISCONNECTED -> "连接失败"
+                    }
+                    setupTg.visibility = when (status) {
+                        BridgeStatus.NOT_CONFIGURED, BridgeStatus.DISCONNECTED -> View.VISIBLE
+                        else -> View.GONE
+                    }
+                }
             }
         }
 

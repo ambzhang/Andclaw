@@ -30,6 +30,15 @@ class TgBotClient(private val token: String) {
 
     private var offset: Long = 0
 
+    suspend fun getMe(): Boolean = withContext(Dispatchers.IO) {
+        runCatching {
+            val req = Request.Builder().url("$base/getMe").get().build()
+            client.newCall(req).execute().use { resp ->
+                resp.isSuccessful && JSONObject(resp.body.string()).optBoolean("ok")
+            }
+        }.getOrDefault(false)
+    }
+
     suspend fun poll(timeoutSec: Int = 30): List<TgMessage> = withContext(Dispatchers.IO) {
         val req = Request.Builder()
             .url("$base/getUpdates?timeout=$timeoutSec&offset=$offset&allowed_updates=message")

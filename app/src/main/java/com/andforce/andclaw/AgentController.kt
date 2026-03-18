@@ -20,6 +20,7 @@ import com.afwsamples.testdpc.common.Util
 import com.andforce.andclaw.db.ChatMessageDao
 import com.andforce.andclaw.db.ChatMessageEntity
 import com.google.gson.Gson
+import com.base.services.BridgeStatus
 import com.base.services.IAiConfigService
 import com.base.services.ITgBridgeService
 import kotlinx.coroutines.*
@@ -46,6 +47,9 @@ object AgentController : ITgBridgeService, IAiConfigService {
     private var tgBotClient: TgBotClient? = null
     var tgActiveChatId: Long = 0L
         private set
+
+    private val _bridgeStatus = MutableStateFlow(BridgeStatus.NOT_CONFIGURED)
+    override val bridgeStatus: StateFlow<BridgeStatus> = _bridgeStatus
 
     private val _messages = MutableStateFlow<List<ChatMessage>>(emptyList())
     val messages: StateFlow<List<ChatMessage>> = _messages
@@ -163,7 +167,11 @@ object AgentController : ITgBridgeService, IAiConfigService {
         getPrefs().edit().putString("tg_token", token).apply()
         if (token != oldToken) {
             stopBridge()
-            startBridge()
+            if (token.isBlank()) {
+                _bridgeStatus.value = BridgeStatus.NOT_CONFIGURED
+            } else {
+                startBridge()
+            }
         }
     }
 
@@ -173,11 +181,16 @@ object AgentController : ITgBridgeService, IAiConfigService {
 
     override fun startBridge() {
         val token = tgToken
-        if (token.isBlank()) return
+        if (token.isBlank()) {
+            _bridgeStatus.value = BridgeStatus.NOT_CONFIGURED
+            return
+        }
 
         tgBotClient = TgBotClient(token)
 
         scope.launch(Dispatchers.IO) {
+            val connected = tgBotClient?.getMe() == true
+            _bridgeStatus.value = if (connected) BridgeStatus.CONNECTED else BridgeStatus.DISCONNECTED
             tgBotClient?.setMyCommands(listOf(
                 "status" to "查看 Andclaw 运行状态",
                 "stop" to "停止当前任务"
@@ -204,6 +217,7 @@ object AgentController : ITgBridgeService, IAiConfigService {
     override fun stopBridge() {
         tgJob?.cancel()
         tgJob = null
+        _bridgeStatus.value = BridgeStatus.STOPPED
     }
 
     private suspend fun handleTelegramCommand(chatId: Long, msgId: Long, text: String) {
