@@ -3,7 +3,7 @@ import { Adb, AdbDaemonTransport } from '@yume-chan/adb'
 import { AdbDaemonWebUsbDeviceManager } from '@yume-chan/adb-daemon-webusb'
 import AdbWebCredentialStore from '@yume-chan/adb-credential-web'
 
-const APK_URL = 'https://github.com/andforce/Andclaw/releases/download/1.0.6/Andclaw.apk'
+const APK_URL = 'https://github.com/andforce/Andclaw/releases/download/1.0.7/Andclaw.apk'
 const DPM_COMMAND = 'dpm set-device-owner com.andforce.andclaw/.DeviceAdminReceiver'
 const DEVICE_TEMP_PATH = '/data/local/tmp/andclaw.apk'
 
