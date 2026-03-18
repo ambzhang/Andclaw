@@ -28,13 +28,19 @@ android {
         buildConfigField "String", "TG_TOKEN", "\"${localProps.getProperty("tg_token", "")}\""
     }
 
+    def storeFileProp = localProps.getProperty("store_file") ?: project.findProperty("RELEASE_STORE_FILE")
+    def storePass = localProps.getProperty("store_password") ?: project.findProperty("RELEASE_STORE_PASSWORD")
+    def keyAliasProp = localProps.getProperty("key_alias") ?: project.findProperty("RELEASE_KEY_ALIAS")
+    def keyPass = localProps.getProperty("key_password") ?: project.findProperty("RELEASE_KEY_PASSWORD")
+    def hasSigning = storeFileProp && storePass && keyAliasProp && keyPass
+
     signingConfigs {
         release {
-            if (project.hasProperty('RELEASE_STORE_FILE')) {
-                storeFile file(RELEASE_STORE_FILE)
-                storePassword RELEASE_STORE_PASSWORD
-                keyAlias RELEASE_KEY_ALIAS
-                keyPassword RELEASE_KEY_PASSWORD
+            if (hasSigning) {
+                storeFile storeFileProp?.startsWith("/") ? file(storeFileProp) : rootProject.file(storeFileProp)
+                storePassword storePass
+                keyAlias keyAliasProp
+                keyPassword keyPass
             }
         }
     }
@@ -44,6 +50,11 @@ android {
             signingConfig signingConfigs.release
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+        debug {
+            if (hasSigning) {
+                signingConfig signingConfigs.release
+            }
         }
     }
 
