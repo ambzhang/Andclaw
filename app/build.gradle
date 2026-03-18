@@ -14,12 +14,15 @@ android {
     namespace 'com.andforce.andclaw'
     compileSdk 36
 
+    def verName = project.findProperty("VERSION_NAME") ?: "1.0.7"
+    def verCode = (project.findProperty("VERSION_CODE") ?: "107") as int
+
     defaultConfig {
         applicationId "com.andforce.andclaw"
         minSdk 31
         targetSdk 36
-        versionCode 107
-        versionName "1.0.7"
+        versionCode verCode
+        versionName verName
 
         multiDexEnabled true
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
