@@ -4,7 +4,7 @@
   <img src="./icon.png" alt="Andclaw Logo" width="120">
 </p>
 
-[![Android](https://img.shields.io/badge/Android-12%2B-brightgreen?logo=android)](https://www.android.com/)
+[![Android](https://img.shields.io/badge/Android-9%2B-brightgreen?logo=android)](https://www.android.com/)
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.3.10-blue?logo=kotlin)](https://kotlinlang.org/)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Website](https://img.shields.io/badge/官网-andclaw.app-blue?logo=googlechrome&logoColor=white)](https://andclaw.app/)
