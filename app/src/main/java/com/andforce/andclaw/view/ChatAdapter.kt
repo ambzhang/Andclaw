@@ -20,8 +20,52 @@ import java.util.Date
 import java.util.Locale
 
 class ChatAdapter(
-    private val onConfirmAction: (AiAction) -> Unit
+    private val onConfirmAction: (AiAction) -> Unit,
+    private val onSelectionChanged: (isSelecting: Boolean, selectedCount: Int) -> Unit
 ) : ListAdapter<ChatMessage, ChatAdapter.ChatViewHolder>(ChatDiffCallback()) {
+
+    var isSelectionMode = false
+        private set
+    private val selectedIds = mutableSetOf<Long>()
+
+    fun enterSelectionMode(firstId: Long) {
+        isSelectionMode = true
+        selectedIds.clear()
+        selectedIds.add(firstId)
+        notifyDataSetChanged()
+        onSelectionChanged(true, selectedIds.size)
+    }
+
+    fun exitSelectionMode() {
+        isSelectionMode = false
+        selectedIds.clear()
+        notifyDataSetChanged()
+        onSelectionChanged(false, 0)
+    }
+
+    fun selectAll() {
+        selectedIds.clear()
+        for (i in 0 until itemCount) {
+            selectedIds.add(getItem(i).id)
+        }
+        notifyDataSetChanged()
+        onSelectionChanged(true, selectedIds.size)
+    }
+
+    fun getSelectedIds(): List<Long> = selectedIds.toList()
+
+    private fun toggleSelection(id: Long) {
+        if (selectedIds.contains(id)) {
+            selectedIds.remove(id)
+        } else {
+            selectedIds.add(id)
+        }
+        if (selectedIds.isEmpty()) {
+            exitSelectionMode()
+        } else {
+            onSelectionChanged(true, selectedIds.size)
+        }
+    }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ChatViewHolder {
         val binding = ItemChatBubbleBinding.inflate(
@@ -43,6 +87,11 @@ class ChatAdapter(
             val isAi = msg.role == "ai"
             val isSystem = msg.role == "system"
             val ctx = binding.root.context
+
+            // 选择模式 CheckBox
+            binding.cbSelect.visibility = if (isSelectionMode) View.VISIBLE else View.GONE
+            binding.cbSelect.isChecked = selectedIds.contains(msg.id)
+            binding.cbSelect.setOnClickListener { toggleSelection(msg.id) }
 
             val lp = binding.bubbleContainer.layoutParams as FrameLayout.LayoutParams
             lp.gravity = if (isUser) Gravity.END else Gravity.START
@@ -105,12 +154,26 @@ class ChatAdapter(
 
             binding.tvTimestamp.text = SimpleDateFormat("HH:mm", Locale.getDefault())
                 .format(Date(msg.timestamp))
+
+            // 长按进入选择模式 / 选择模式下点击切换
+            itemView.setOnLongClickListener {
+                if (!isSelectionMode) {
+                    enterSelectionMode(msg.id)
+                }
+                true
+            }
+            itemView.setOnClickListener {
+                if (isSelectionMode) {
+                    toggleSelection(msg.id)
+                    notifyItemChanged(bindingAdapterPosition)
+                }
+            }
         }
     }
 
     class ChatDiffCallback : DiffUtil.ItemCallback<ChatMessage>() {
         override fun areItemsTheSame(oldItem: ChatMessage, newItem: ChatMessage): Boolean {
-            return oldItem.timestamp == newItem.timestamp
+            return oldItem.id == newItem.id && oldItem.timestamp == newItem.timestamp
         }
 
         override fun areContentsTheSame(oldItem: ChatMessage, newItem: ChatMessage): Boolean {

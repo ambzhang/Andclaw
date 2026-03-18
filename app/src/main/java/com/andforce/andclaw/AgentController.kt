@@ -17,6 +17,8 @@ import com.andforce.andclaw.model.AiAction
 import com.andforce.andclaw.model.ApiConfig
 import com.andforce.andclaw.model.ChatMessage
 import com.afwsamples.testdpc.common.Util
+import com.andforce.andclaw.db.ChatMessageDao
+import com.andforce.andclaw.db.ChatMessageEntity
 import com.google.gson.Gson
 import com.base.services.IAiConfigService
 import com.base.services.ITgBridgeService
@@ -59,11 +61,27 @@ object AgentController : ITgBridgeService, IAiConfigService {
     private var uiState = AgentUiState()
 
     private val dpmBridge by lazy { DpmBridge(appContext) }
+    private lateinit var chatDao: ChatMessageDao
 
-    fun init(context: Context) {
+    fun init(context: Context, dao: ChatMessageDao) {
         appContext = context.applicationContext
+        chatDao = dao
         migrateOldProviderKeys()
         restoreConfig()
+        loadHistory()
+    }
+
+    private fun loadHistory() {
+        scope.launch(Dispatchers.IO) {
+            val entities = chatDao.getAll()
+            val msgs = entities.map { e ->
+                val action = e.actionJson?.let {
+                    try { gson.fromJson(it, AiAction::class.java) } catch (_: Exception) { null }
+                }
+                ChatMessage(role = e.role, content = e.content, action = action, timestamp = e.timestamp, id = e.id)
+            }
+            _messages.value = msgs
+        }
     }
 
     private fun migrateOldProviderKeys() {
@@ -815,15 +833,41 @@ object AgentController : ITgBridgeService, IAiConfigService {
     }
 
     fun addMessage(role: String, content: String, action: AiAction? = null, screenshotBase64: String? = null) {
-        _messages.update { current ->
-            current + ChatMessage(role, content, action, screenshotBase64 = screenshotBase64)
-        }
+        val msg = ChatMessage(role, content, action, screenshotBase64 = screenshotBase64)
+        _messages.update { current -> current + msg }
         Log.d(TAG, "[$role]: $content")
+
+        scope.launch(Dispatchers.IO) {
+            val entity = ChatMessageEntity(
+                role = msg.role,
+                content = msg.content,
+                actionJson = action?.let { gson.toJson(it) },
+                timestamp = msg.timestamp
+            )
+            val id = chatDao.insert(entity)
+            _messages.update { list ->
+                list.map { if (it.timestamp == msg.timestamp && it.role == msg.role && it.id == 0L) it.copy(id = id) else it }
+            }
+        }
 
         if (role != "user" && tgActiveChatId != 0L) {
             scope.launch(Dispatchers.IO) {
                 tgBotClient?.send(tgActiveChatId, "[$role] $content")
             }
+        }
+    }
+
+    fun deleteMessages(ids: List<Long>) {
+        scope.launch(Dispatchers.IO) {
+            chatDao.deleteByIds(ids)
+            _messages.update { list -> list.filter { it.id !in ids } }
+        }
+    }
+
+    fun clearAllMessages() {
+        scope.launch(Dispatchers.IO) {
+            chatDao.deleteAll()
+            _messages.value = emptyList()
         }
     }
 }

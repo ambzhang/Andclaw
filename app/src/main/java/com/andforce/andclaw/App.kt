@@ -2,7 +2,9 @@ package com.andforce.andclaw
 
 import android.app.admin.DevicePolicyManager
 import android.util.Log
+import androidx.room.Room
 import com.afwsamples.testdpc.KoinApplication
+import com.andforce.andclaw.db.AppDatabase
 import com.afwsamples.testdpc.policy.locktask.KioskModeHelper
 import com.afwsamples.testdpc.policy.locktask.viewmodule.KioskViewModule
 import com.andforce.andclaw.service.impl.AppInfoService
@@ -39,6 +41,8 @@ class App : KoinApplication() {
             single { AppInfoService() } bind IAppInfoService::class
             single<ITgBridgeService> { AgentController }
             single<IAiConfigService> { AgentController }
+            single { Room.databaseBuilder(get(), AppDatabase::class.java, "andclaw.db").build() }
+            single { get<AppDatabase>().chatMessageDao() }
         }
         return module {
             includes(base, appModule)
@@ -49,7 +53,8 @@ class App : KoinApplication() {
         super.onCreate()
         Log.d(TAG, "onCreate")
 
-        AgentController.init(this)
+        val db = KoinJavaComponent.get<AppDatabase>(AppDatabase::class.java)
+        AgentController.init(this, db.chatMessageDao())
 
         // 监听DeviceOwner是否开启
         appScope.launch {

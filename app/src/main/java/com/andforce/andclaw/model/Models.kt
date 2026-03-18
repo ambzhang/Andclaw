@@ -153,5 +153,6 @@ data class ChatMessage(
     val content: String,
     val action: AiAction? = null,
     val screenshotBase64: String? = null,
-    val timestamp: Long = System.currentTimeMillis()
+    val timestamp: Long = System.currentTimeMillis(),
+    val id: Long = 0
 )
