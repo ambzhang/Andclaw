@@ -230,6 +230,15 @@ open class SetupKioskModeActivity : AppCompatActivity() {
             )
             return
         }
+
+        if (!Settings.canDrawOverlays(this)) {
+            showPermissionGuideDialog(
+                title = "需要悬浮窗权限",
+                message = "Andclaw 需要「显示在其他应用上层」权限来显示急停悬浮按钮，请在设置中找到 Andclaw 并允许。",
+                intent = Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION)
+            )
+            return
+        }
     }
 
     private fun isAccessibilityServiceEnabled(): Boolean {
