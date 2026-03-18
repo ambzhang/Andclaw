@@ -25,6 +25,14 @@ import java.net.SocketTimeoutException
 import java.util.concurrent.TimeUnit
 
 object Utils {
+    private const val TAG = "AgentLLM"
+
+    fun maskKey(key: String): String {
+        if (key.isEmpty()) return "(empty)"
+        if (key.length <= 8) return "${key.take(2)}***${key.takeLast(2)}(len=${key.length})"
+        return "${key.take(4)}***${key.takeLast(4)}(len=${key.length})"
+    }
+
     fun buildAgentSystemPrompt(userGoal: String, isDeviceOwner: Boolean): String {
         val dpmSection = if (isDeviceOwner) """
 
@@ -348,6 +356,8 @@ CRITICAL: Your entire response must be parseable as JSON. Any non-JSON text will
             val systemPrompt = buildAgentSystemPrompt(userGoal, isDeviceOwner)
             val isKimi = config.provider.equals("Kimi Code", ignoreCase = true)
 
+            Log.d(TAG, "callLLMWithHistory: provider=${config.provider}, isKimi=$isKimi, model=${config.model}, apiUrl=${config.apiUrl}, apiKey=${maskKey(config.apiKey)}")
+
             val screenHint = if (screenshotBase64 != null) {
                 val wm = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
                 val metrics = DisplayMetrics()
@@ -371,7 +381,6 @@ Respond with JSON only."""
                 "Current Screen State:\n$screenData\n\nPerform the next step. Respond with JSON only."
 
             if (isKimi) {
-                // --- Kimi Coding API（Anthropic messages 格式）---
                 val kimiMessages = mutableListOf<KimiMessage>()
                 history.forEach { msg ->
                     val role = if (msg["role"] == "ai") "assistant" else msg["role"] ?: "user"
@@ -379,12 +388,16 @@ Respond with JSON only."""
                 }
                 kimiMessages.add(KimiMessage("user", screenHint, imageBase64 = screenshotBase64))
 
+                val kimiBaseUrl = config.apiUrl.ifEmpty { "https://api.kimi.com/coding" }
+                val kimiModel = config.model.ifEmpty { "kimi-k2.5" }
+                Log.d(TAG, "Kimi request: baseUrl=$kimiBaseUrl, model=$kimiModel, apiKey=${maskKey(config.apiKey)}, messagesCount=${kimiMessages.size}, hasScreenshot=${screenshotBase64 != null}")
+
                 return@withContext KimiApiClient.chat(
                     messages = kimiMessages,
                     system = systemPrompt,
                     apiKey = config.apiKey,
-                    baseUrl = config.apiUrl.ifEmpty { "https://api.kimi.com/coding" },
-                    model = config.model.ifEmpty { "kimi-k2.5" }
+                    baseUrl = kimiBaseUrl,
+                    model = kimiModel
                 )
             }
 
@@ -432,6 +445,8 @@ Respond with JSON only."""
                 }
             }.toString()
 
+            Log.d(TAG, "OpenAI request: url=$url, model=${config.model}, apiKey=${maskKey(config.apiKey)}, historySize=${history.size}, hasScreenshot=${screenshotBase64 != null}")
+
             val request = Request.Builder()
                 .url(url)
                 .post(requestBody.toRequestBody("application/json".toMediaType()))
@@ -441,7 +456,7 @@ Respond with JSON only."""
             client.newCall(request).execute().use { response ->
                 val responseString = response.body.string()
                 if (!response.isSuccessful) {
-                    Log.e("AGENT_API", "Error ${response.code}: $responseString")
+                    Log.e(TAG, "OpenAI API Error ${response.code}: $responseString")
                     return@withContext errorJsonStub("API Error ${response.code}")
                 }
 
@@ -462,7 +477,7 @@ Respond with JSON only."""
         } catch (e: Exception) {
             e.printStackTrace()
             val unknownError = "Unexpected error: ${e.message}"
-            Log.e("LLM_CALL", unknownError)
+            Log.e(TAG, unknownError, e)
             return@withContext errorJsonStub("System Error")
         }
     }

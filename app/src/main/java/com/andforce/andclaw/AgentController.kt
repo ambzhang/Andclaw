@@ -62,6 +62,52 @@ object AgentController : ITgBridgeService, IAiConfigService {
 
     fun init(context: Context) {
         appContext = context.applicationContext
+        migrateOldProviderKeys()
+        restoreConfig()
+    }
+
+    private fun migrateOldProviderKeys() {
+        val oldPrefs = appContext.getSharedPreferences("ai_provider_keys", Context.MODE_PRIVATE)
+        val allEntries = oldPrefs.all
+        if (allEntries.isEmpty()) return
+
+        val prefs = getPrefs()
+        val editor = prefs.edit()
+        for ((key, value) in allEntries) {
+            if (!prefs.contains(key)) {
+                editor.putString(key, value as? String ?: "")
+            }
+        }
+        editor.apply()
+        oldPrefs.edit().clear().apply()
+        Log.d(TAG, "migrateOldProviderKeys: migrated ${allEntries.size} entries")
+    }
+
+    private fun restoreConfig() {
+        val prefs = getPrefs()
+        val savedProvider = prefs.getString("ai_provider", null)
+        val apiKey = if (savedProvider != null) {
+            prefs.getString("ai_api_key", null)
+                ?: loadProviderKey(savedProvider)
+        } else {
+            loadProviderKey("Kimi Code").ifEmpty { config.apiKey }
+        }
+        config = ApiConfig(
+            provider = savedProvider ?: config.provider,
+            apiKey = apiKey,
+            apiUrl = prefs.getString("ai_api_url", config.apiUrl) ?: config.apiUrl,
+            model = prefs.getString("ai_model", config.model) ?: config.model
+        )
+        Log.d(TAG, "restoreConfig: provider=${config.provider}, apiKey=${Utils.maskKey(config.apiKey)}")
+    }
+
+    private fun persistConfig() {
+        getPrefs().edit()
+            .putString("ai_provider", config.provider)
+            .putString("ai_api_key", config.apiKey)
+            .putString("ai_api_url", config.apiUrl)
+            .putString("ai_model", config.model)
+            .apply()
     }
 
     override val provider: String get() = config.provider
@@ -72,6 +118,17 @@ object AgentController : ITgBridgeService, IAiConfigService {
 
     override fun updateConfig(provider: String, apiUrl: String, apiKey: String, model: String) {
         config = config.copy(provider = provider, apiUrl = apiUrl, apiKey = apiKey, model = model)
+        persistConfig()
+    }
+
+    override fun saveProviderKey(provider: String, key: String) {
+        if (provider.isNotBlank() && key.isNotBlank()) {
+            getPrefs().edit().putString("api_key_$provider", key).apply()
+        }
+    }
+
+    override fun loadProviderKey(provider: String): String {
+        return getPrefs().getString("api_key_$provider", "") ?: ""
     }
 
     override fun getTgChatId(): Long = getPrefs().getLong("tg_allowed_chat_id", 0L)
@@ -133,6 +190,7 @@ object AgentController : ITgBridgeService, IAiConfigService {
                 tgBotClient?.send(chatId, "✅ 已停止当前任务", msgId)
             }
             else -> {
+                tgBotClient?.sendTyping(chatId)
                 withContext(Dispatchers.Main) { startAgent(text) }
             }
         }
@@ -148,6 +206,8 @@ object AgentController : ITgBridgeService, IAiConfigService {
         lastFingerprint = ""
         loopRetryCount = 0
 
+        Log.d(TAG, "startAgent: provider=${config.provider}, model=${config.model}, apiUrl=${config.apiUrl}, apiKey=${Utils.maskKey(config.apiKey)}")
+
         agentJob = scope.launch {
             delay(1500)
             executeAgentStep(input)
@@ -162,6 +222,8 @@ object AgentController : ITgBridgeService, IAiConfigService {
 
     private suspend fun executeAgentStep(userInput: String, screenshotBase64: String? = null) {
         if (!isAgentRunning) return
+
+        if (tgActiveChatId != 0L) tgBotClient?.sendTyping(tgActiveChatId)
 
         val svc = AgentAccessibilityService.instance
         val screenData = svc?.captureScreenHierarchy() ?: "Screen data inaccessible"
@@ -198,6 +260,7 @@ object AgentController : ITgBridgeService, IAiConfigService {
 
         try {
             val isDeviceOwner = Util.isDeviceOwner(appContext)
+            Log.d(TAG, "executeAgentStep: calling LLM, provider=${config.provider}, apiKey=${Utils.maskKey(config.apiKey)}, historySize=${historyContext.size}, hasScreenshot=${finalScreenshot != null}")
             var response = Utils.callLLMWithHistory(
                 userInput, screenData, historyContext, config, appContext,
                 isDeviceOwner = isDeviceOwner,

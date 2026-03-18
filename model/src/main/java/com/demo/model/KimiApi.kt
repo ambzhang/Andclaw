@@ -1,5 +1,6 @@
 package com.demo.model
 
+import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
@@ -17,6 +18,14 @@ data class KimiMessage(
 )
 
 object KimiApiClient {
+
+    private const val TAG = "KimiApiClient"
+
+    private fun maskKey(key: String): String {
+        if (key.isEmpty()) return "(empty)"
+        if (key.length <= 8) return "${key.take(2)}***${key.takeLast(2)}(len=${key.length})"
+        return "${key.take(4)}***${key.takeLast(4)}(len=${key.length})"
+    }
 
     private val client = OkHttpClient.Builder()
         .connectTimeout(60, TimeUnit.SECONDS)
@@ -81,6 +90,8 @@ object KimiApiClient {
             })
         }
 
+        Log.d(TAG, "chat: url=$url, model=$model, apiKey=${maskKey(apiKey)}, messagesCount=${messages.size}, hasSystem=${!system.isNullOrEmpty()}")
+
         val request = Request.Builder()
             .url(url)
             .post(body.toString().toRequestBody("application/json".toMediaType()))
@@ -90,7 +101,9 @@ object KimiApiClient {
 
         client.newCall(request).execute().use { response ->
             val responseBody = response.body?.string() ?: ""
+            Log.d(TAG, "chat response: code=${response.code}, bodyLen=${responseBody.length}")
             if (!response.isSuccessful) {
+                Log.e(TAG, "chat failed: code=${response.code}, body=$responseBody")
                 throw KimiApiException(response.code, responseBody)
             }
 

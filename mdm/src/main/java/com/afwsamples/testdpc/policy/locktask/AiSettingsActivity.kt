@@ -20,18 +20,7 @@ class AiSettingsActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityAiSettingsBinding
     private val aiConfigService: IAiConfigService by inject()
-    private val keyPrefs by lazy { getSharedPreferences("ai_provider_keys", MODE_PRIVATE) }
     private var currentProvider = ""
-
-    private fun saveApiKeyForProvider(provider: String, apiKey: String) {
-        if (provider.isNotBlank() && apiKey.isNotBlank()) {
-            keyPrefs.edit().putString("api_key_$provider", apiKey).apply()
-        }
-    }
-
-    private fun loadApiKeyForProvider(provider: String): String {
-        return keyPrefs.getString("api_key_$provider", "") ?: ""
-    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -55,10 +44,10 @@ class AiSettingsActivity : AppCompatActivity() {
         binding.spinnerProvider.apply {
             setAdapter(adapter)
             setOnItemClickListener { _, _, position, _ ->
-                saveApiKeyForProvider(currentProvider, binding.etApiKey.text.toString().trim())
+                aiConfigService.saveProviderKey(currentProvider, binding.etApiKey.text.toString().trim())
                 val selected = providers[position]
                 currentProvider = selected
-                val savedKey = loadApiKeyForProvider(selected)
+                val savedKey = aiConfigService.loadProviderKey(selected)
                 when (selected) {
                     "Kimi Code" -> {
                         binding.etBaseUrl.setText("https://api.kimi.com/coding")
@@ -84,7 +73,7 @@ class AiSettingsActivity : AppCompatActivity() {
         currentProvider = aiConfigService.provider
         binding.spinnerProvider.setText(currentProvider, false)
         binding.etBaseUrl.setText(aiConfigService.apiUrl)
-        val savedKey = loadApiKeyForProvider(currentProvider)
+        val savedKey = aiConfigService.loadProviderKey(currentProvider)
         binding.etApiKey.setText(savedKey.ifEmpty { aiConfigService.apiKey })
         binding.etModel.setText(aiConfigService.model, false)
         binding.etTgToken.setText(aiConfigService.tgToken)
@@ -95,7 +84,7 @@ class AiSettingsActivity : AppCompatActivity() {
     private fun saveAndFinish() {
         val provider = binding.spinnerProvider.text.toString()
         val apiKey = binding.etApiKey.text.toString().trim()
-        saveApiKeyForProvider(provider, apiKey)
+        aiConfigService.saveProviderKey(provider, apiKey)
         aiConfigService.updateConfig(
             provider = provider,
             apiUrl = binding.etBaseUrl.text.toString(),

@@ -11,4 +11,6 @@ interface IAiConfigService {
     fun getTgChatId(): Long
     fun setTgChatId(chatId: Long)
     fun setTgToken(token: String)
+    fun saveProviderKey(provider: String, key: String)
+    fun loadProviderKey(provider: String): String
 }

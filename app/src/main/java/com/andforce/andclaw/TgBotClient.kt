@@ -62,6 +62,19 @@ class TgBotClient(private val token: String) {
         }.getOrElse { emptyList() }
     }
 
+    suspend fun sendTyping(chatId: Long) = withContext(Dispatchers.IO) {
+        val payload = JSONObject().apply {
+            put("chat_id", chatId)
+            put("action", "typing")
+        }
+        val req = Request.Builder()
+            .url("$base/sendChatAction")
+            .post(payload.toString().toRequestBody("application/json".toMediaType()))
+            .build()
+
+        runCatching { client.newCall(req).execute().use { } }
+    }
+
     suspend fun send(chatId: Long, text: String, replyTo: Long? = null) = withContext(Dispatchers.IO) {
         val payload = JSONObject().apply {
             put("chat_id", chatId)

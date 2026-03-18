@@ -18,8 +18,8 @@ android {
         applicationId "com.andforce.andclaw"
         minSdk 31
         targetSdk 36
-        versionCode 103
-        versionName "1.0.3"
+        versionCode 104
+        versionName "1.0.4"
 
         multiDexEnabled true
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
@@ -50,10 +50,7 @@ android {
 
     applicationVariants.configureEach { variant ->
         variant.outputs.configureEach { output ->
-            def vName = variant.versionName
-            def vCode = variant.versionCode
-            def buildType = variant.buildType.name
-            outputFileName = "${vName}-${vCode}-${buildType}.apk"
+            outputFileName = "Andclaw.apk"
         }
     }
 }
