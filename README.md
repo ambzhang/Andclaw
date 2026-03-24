@@ -30,7 +30,7 @@
 | **🤏 拟人操作** | 模拟点击、滑动、长按、文本输入等手势操作 |
 | **📸 多媒体能力** | 拍照、录像、录屏、截图、音量控制 |
 | **📱 设备管控** | Device Owner 模式下支持企业级设备管理（静默装卸、Kiosk 等） |
-| **🤖 Telegram 远程控制** | 通过 Telegram Bot 远程下发指令、接收截图/录像 |
+| **🤖 远程控制** | **Telegram Bot** 或 **ClawBot（iLink）** 双通道：远程下发指令；截图/媒体回传能力因通道而异（见下文） |
 
 ## 📋 与其他方案对比
 
@@ -39,7 +39,7 @@
 | 无需电脑 | ✅ | ❌ 需 PC 运行 Python | ✅ | ✅ |
 | 无需专用硬件 | ✅ | ✅ | ✅ | ❌ 需购买 3499 元工程机 |
 | 无需 Shizuku / ADB | ✅ 无障碍服务 | ❌ ADB 控制 | ❌ 依赖 Shizuku | ✅ |
-| 远程控制 | ✅ Telegram Bot | ❌ | ❌ | ❌ |
+| 远程控制 | ✅ Telegram / ClawBot | ❌ | ❌ | ❌ |
 | 自定义模型 | ✅ 多 Provider | ✅ | ✅ | ❌ 仅豆包 |
 | 开源 | ✅ | ✅ | ✅ | ❌ |
 | 原生 Android | ✅ Kotlin | ❌ Python | ✅ Kotlin | ✅ |
@@ -47,7 +47,7 @@
 
 **Andclaw 的核心差异**：
 - **零外部依赖**：基于 Android 无障碍服务，无需 Shizuku 初始化、无需 ADB 连接、无需电脑
-- **远程控制**：通过 Telegram Bot 远程下发指令、接收截图和录像，适合无人值守场景
+- **远程控制**：支持 **Telegram Bot** 与 **ClawBot（iLink 微信机器人协议）** 两种通道远程下发指令；截图与多媒体回传在 Telegram 侧为真实文件发送，在 ClawBot 侧当前为**文本降级说明**（详见「远程通道」）
 - **UI 层级 + 视觉双模感知**：优先解析 Accessibility 节点树，WebView/浏览器场景自动切换截图分析
 - **循环检测 + 截图重试**：同一动作重复 5 次自动截图视觉重试，避免 Agent 死循环
 
@@ -166,7 +166,7 @@ AI 返回 JSON 操作决策
 | `long_press` | 长按，支持自定义时长 |
 | `text_input` | 向当前焦点输入框注入文本（SET_TEXT → 剪贴板粘贴 fallback） |
 | `global_action` | 系统级操作：返回、Home、最近任务、通知栏、快捷设置 |
-| `screenshot` | 截图并保存到 `Pictures/Andclaw/`，通过 Telegram 自动发送 |
+| `screenshot` | 截图并保存到 `Pictures/Andclaw/`；远程会话为 Telegram 时自动发送图片；为 ClawBot 时由应用**尝试**发送文本说明（本仓库未接 iLink 媒体上传协议，且桥未就绪时可能无法发出） |
 | `download` | 通过 DownloadManager 直接下载文件（无需打开浏览器） |
 | `wait` | 等待页面加载/UI 过渡完成后重新检查屏幕（最长 10 秒） |
 | `camera` | 拍照（`take_photo`）、开始录像（`start_video`）、停止录像（`stop_video`） |
@@ -197,9 +197,15 @@ Moonshot AI 提供了两套独立的 API 服务，API Key **不通用**：
 | **API Key 获取** | [Kimi Code 会员页面](https://www.kimi.com/code/console) | [Moonshot 开放平台](https://platform.moonshot.cn/console/api-keys) |
 | **定位** | 专为 Coding Agent 优化 | 通用 LLM API |
 
-### 5. Telegram 远程控制
+### 5. 远程通道：Telegram 与 ClawBot
 
-通过 Telegram Bot 远程控制设备，启动 Andclaw 后 Telegram 机器人会自动启动。
+Andclaw 支持两套远程通道，可在 **MDM 设置 / AI 设置** 中分别配置；二者可同时启用，互不替代本地 Agent 逻辑。
+
+**忙碌提示（双通道一致）**：当 **Agent 已在执行任务**时，远程侧再发来**普通文本指令**不会抢占当前任务，而是收到一条**忙碌提示**，请稍后再试或发送 `/stop` 停止当前任务后再下发新指令。`/status` 与 `/stop` 不受此限制（仍可随时查询状态或停止任务）。
+
+#### Telegram Bot
+
+通过 Telegram Bot 远程控制设备；配置 Token 并启动应用后，长轮询会自动运行。
 
 | 命令 | 说明 |
 |------|------|
@@ -207,7 +213,24 @@ Moonshot AI 提供了两套独立的 API 服务，API Key **不通用**：
 | `/status` | 查询 Agent 状态（运行中/空闲、当前任务、Chat ID） |
 | `/stop` | 停止当前正在执行的任务 |
 
-截图、拍照、录像完成后会自动发送到 Telegram 对话中。
+截图、拍照、录像、录音、录屏等媒体在成功后**以文件形式**发送到当前 Telegram 对话（受 Chat ID 白名单约束）。
+
+#### ClawBot（iLink）
+
+通过微信侧 **iLink** 机器人协议与设备侧长轮询对接（实现方式对齐本仓库参考的 `wechat-acp` / `weclaw-proxy` 风格 HTTP）。
+
+**登录与配置（当前版本）**
+
+- 在 **Device Owner / Kiosk 流程中的 AI 设置页**（MDM 模块 `AiSettingsActivity`）底部的 **ClawBot** 区域可填写 Base URL、Bot Type 等，并通过按钮触发「登录 / 重新登录 / 清除登录状态」等入口。
+- **当前为占位登录入口**：应用内会提示「尚未接入 ClawBot 登录流程」——**真实扫码登录、二维码展示与完整 OAuth 流程尚未在本仓库接入**，请勿将 README 理解为已可端到端扫码登录；后续版本将完善。
+
+| 能力 | 说明 |
+|------|------|
+| 文本指令 | ✅ 支持：用户消息经轮询进入 Agent，回复走 `sendmessage` |
+| 正在输入（typing） | ✅ 支持：`getconfig` 取 `typing_ticket` 后调用 `sendtyping` |
+| 图片 / 视频 / 音频 远程回传 | ⚠️ **本仓库未实现 iLink 媒体发送 API**；当 Agent 需要提示远端时，由应用**尝试**经文本消息发送一段中文说明（文件已保存在本机、协议未接媒体等），**不会上传二进制**；若 ClawBot 桥未运行则可能仅本地保存，详见 logcat `RemoteBridgeManager`。 |
+
+因此：使用 ClawBot 时，请在本机相册 / `Pictures/Andclaw`、`Movies/Andclaw` 等路径查看实际文件；远程侧依赖文本通道且以当前实现为准。
 
 ---
 

@@ -27,9 +27,11 @@ import com.afwsamples.testdpc.DevicePolicyManagerGatewayImpl
 import com.afwsamples.testdpc.databinding.ActivitySetupKioskLayoutBinding
 import com.afwsamples.testdpc.policy.locktask.viewmodule.KioskViewModule
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import kotlinx.coroutines.flow.combine
 import com.base.services.BridgeStatus
-import com.base.services.IAiConfigService
-import com.base.services.ITgBridgeService
+import com.base.services.ClawBotLoginStatus
+import com.base.services.IRemoteBridgeService
+import com.base.services.IRemoteChannelConfigService
 import kotlinx.coroutines.launch
 import org.koin.android.ext.android.inject
 import org.koin.androidx.viewmodel.ext.android.viewModel
@@ -55,8 +57,8 @@ open class SetupKioskModeActivity : AppCompatActivity() {
 
     private val deviceStatusViewModel: DeviceStatusViewModel by inject()
 
-    private val aiConfigService: IAiConfigService by inject()
-    private val tgBridgeService: ITgBridgeService by inject()
+    private val channelConfig: IRemoteChannelConfigService by inject()
+    private val remoteBridgeService: IRemoteBridgeService by inject()
 
     private var appsActivityClickCount = 0
     private var lastAppsClickTime = 0L
@@ -107,6 +109,10 @@ open class SetupKioskModeActivity : AppCompatActivity() {
                 openAiSettings()
             }
 
+            binding.setupClawBot.setOnClickListener {
+                openAiSettings()
+            }
+
         }
 
         connectivityManager = getSystemService(CONNECTIVITY_SERVICE) as ConnectivityManager
@@ -150,11 +156,11 @@ open class SetupKioskModeActivity : AppCompatActivity() {
                     mDevicePolicyManagerGateway?.setPasswordQuality(0, {}, {})
                     mDevicePolicyManagerGateway?.setKeyguardDisabled(true, {}, {})
 
-                    if (aiConfigService.tgToken.isNotBlank()) {
-                        tgBridgeService.startBridge()
+                    if (channelConfig.tgToken.isNotBlank()) {
+                        remoteBridgeService.startTelegramBridgeIfConfigured()
                     }
                 } else {
-                    tgBridgeService.stopBridge()
+                    remoteBridgeService.stopTelegramBridge()
                 }
 
                 binding?.apply {
@@ -168,14 +174,9 @@ open class SetupKioskModeActivity : AppCompatActivity() {
 
         // 监听 Telegram 连接状态
         lifecycleScope.launch {
-            tgBridgeService.bridgeStatus.collect { status ->
+            remoteBridgeService.telegramStatus.collect { status ->
                 binding?.apply {
-                    tgStatus.text = when (status) {
-                        BridgeStatus.NOT_CONFIGURED -> "未配置"
-                        BridgeStatus.STOPPED -> "已停止"
-                        BridgeStatus.CONNECTED -> "已连接"
-                        BridgeStatus.DISCONNECTED -> "连接失败"
-                    }
+                    tgStatus.text = bridgeStatusLabel(status)
                     setupTg.visibility = when (status) {
                         BridgeStatus.NOT_CONFIGURED, BridgeStatus.DISCONNECTED -> View.VISIBLE
                         else -> View.GONE
@@ -184,6 +185,42 @@ open class SetupKioskModeActivity : AppCompatActivity() {
             }
         }
 
+        lifecycleScope.launch {
+            combine(
+                remoteBridgeService.clawBotStatus,
+                remoteBridgeService.clawBotLoginStatus
+            ) { b, l -> b to l }.collect { (bridge, login) ->
+                binding?.apply {
+                    clawBotStatus.text = formatClawBotKioskLine(bridge, login)
+                    setupClawBot.visibility = when (bridge) {
+                        BridgeStatus.NOT_CONFIGURED, BridgeStatus.DISCONNECTED -> View.VISIBLE
+                        else -> View.GONE
+                    }
+                }
+            }
+        }
+
+    }
+
+    private fun bridgeStatusLabel(status: BridgeStatus): String = when (status) {
+        BridgeStatus.NOT_CONFIGURED -> "未配置"
+        BridgeStatus.STOPPED -> "已停止"
+        BridgeStatus.CONNECTED -> "已连接"
+        BridgeStatus.DISCONNECTED -> "未连接"
+    }
+
+    private fun formatClawBotKioskLine(bridge: BridgeStatus, login: ClawBotLoginStatus): String {
+        val b = bridgeStatusLabel(bridge)
+        val l = when (login) {
+            ClawBotLoginStatus.NOT_CONFIGURED -> "未配置"
+            ClawBotLoginStatus.LOGIN_REQUIRED -> "需登录"
+            ClawBotLoginStatus.QR_READY -> "二维码就绪"
+            ClawBotLoginStatus.WAITING_CONFIRM -> "待确认"
+            ClawBotLoginStatus.CONNECTED -> "已登录"
+            ClawBotLoginStatus.DISCONNECTED -> "已断开"
+            ClawBotLoginStatus.STOPPED -> "已停止"
+        }
+        return "桥接: $b · 登录: $l"
     }
 
     override fun onResume() {

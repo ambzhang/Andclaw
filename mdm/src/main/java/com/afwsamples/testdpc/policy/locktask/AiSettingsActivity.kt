@@ -1,13 +1,30 @@
 package com.afwsamples.testdpc.policy.locktask
 
+import android.graphics.Bitmap
+import android.graphics.Color
 import android.os.Bundle
 import android.view.View
 import android.widget.ArrayAdapter
 import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import com.afwsamples.testdpc.databinding.ActivityAiSettingsBinding
+import com.base.services.BridgeStatus
+import com.base.services.ClawBotLoginStatus
+import com.base.services.ClawBotQrPollPhase
 import com.base.services.IAiConfigService
+import com.base.services.IRemoteBridgeService
+import com.base.services.IRemoteChannelConfigService
+import com.google.zxing.BarcodeFormat
+import com.google.zxing.EncodeHintType
+import com.google.zxing.MultiFormatWriter
+import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -20,7 +37,11 @@ class AiSettingsActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityAiSettingsBinding
     private val aiConfigService: IAiConfigService by inject()
+    private val channelConfig: IRemoteChannelConfigService by inject()
+    private val remoteBridge: IRemoteBridgeService by inject()
     private var currentProvider = ""
+
+    private var clawBotLoginJob: Job? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -31,12 +52,230 @@ class AiSettingsActivity : AppCompatActivity() {
 
         setupProviderSpinner()
         loadCurrentConfig()
+        observeClawBotStatusLine()
 
         binding.btnFetchModels.setOnClickListener { fetchModels() }
         binding.btnTestApi.setOnClickListener { testApiConnection() }
         binding.btnTestTg.setOnClickListener { testTelegram() }
+
+        binding.btnClawBotLogin.setOnClickListener { startClawBotQrLogin() }
+        binding.btnClawBotClearAuth.setOnClickListener {
+            cancelClawBotLogin()
+            channelConfig.clearClawBotAuthState()
+            remoteBridge.startClawBotBridgeIfConfigured(forceRelogin = false)
+            hideQrCode()
+            showClawBotResult("已清除 ClawBot 登录状态", isError = false)
+        }
+
         binding.btnSave.setOnClickListener { saveAndFinish() }
     }
+
+    override fun onDestroy() {
+        cancelClawBotLogin()
+        super.onDestroy()
+    }
+
+    // region ClawBot QR Login
+
+    private fun startClawBotQrLogin() {
+        cancelClawBotLogin()
+        binding.btnClawBotLogin.isEnabled = false
+        binding.btnClawBotLogin.text = "正在获取二维码…"
+        showClawBotResult("正在获取二维码…", isError = false)
+        hideQrCode()
+
+        clawBotLoginJob = lifecycleScope.launch {
+            try {
+                runClawBotLoginFlow()
+            } catch (e: Exception) {
+                if (isActive) {
+                    showClawBotResult("登录失败: ${e.message}", isError = true)
+                }
+            } finally {
+                binding.btnClawBotLogin.isEnabled = true
+                binding.btnClawBotLogin.text = "扫码登录"
+            }
+        }
+    }
+
+    private suspend fun runClawBotLoginFlow() {
+        var qrRefreshCount = 0
+        val maxQrRefresh = 3
+
+        while (qrRefreshCount < maxQrRefresh) {
+            val qrResult = remoteBridge.requestClawBotQrCode()
+
+            val qrBitmap = withContext(Dispatchers.Default) {
+                generateQrBitmap(qrResult.qrcodeImgContent, 600)
+            }
+
+            withContext(Dispatchers.Main) {
+                binding.ivClawBotQr.setImageBitmap(qrBitmap)
+                binding.ivClawBotQr.visibility = View.VISIBLE
+                binding.tvClawBotQrHint.visibility = View.VISIBLE
+                binding.tvClawBotQrHint.text = "请打开微信「ClawBot 插件」扫描上方二维码"
+                showClawBotResult("等待扫码…", isError = false)
+                binding.btnClawBotLogin.text = "取消登录"
+                binding.btnClawBotLogin.isEnabled = true
+                binding.btnClawBotLogin.setOnClickListener {
+                    cancelClawBotLogin()
+                    hideQrCode()
+                    showClawBotResult("已取消登录", isError = false)
+                    binding.btnClawBotLogin.text = "扫码登录"
+                    binding.btnClawBotLogin.setOnClickListener { startClawBotQrLogin() }
+                }
+            }
+
+            val deadline = System.currentTimeMillis() + 5 * 60 * 1000L
+
+            while (System.currentTimeMillis() < deadline) {
+                delay(1500)
+                val pollResult = remoteBridge.pollClawBotQrCodeStatus(qrResult.qrcode)
+
+                when (pollResult.phase) {
+                    ClawBotQrPollPhase.WAIT -> { /* keep polling */ }
+                    ClawBotQrPollPhase.SCANED -> {
+                        withContext(Dispatchers.Main) {
+                            binding.tvClawBotQrHint.text = "已扫码，请在微信上确认…"
+                            showClawBotResult("已扫码，等待确认…", isError = false)
+                        }
+                    }
+                    ClawBotQrPollPhase.CONFIRMED -> {
+                        withContext(Dispatchers.Main) {
+                            hideQrCode()
+                            if (pollResult.authState != null) {
+                                showClawBotResult("登录成功 ✓", isError = false)
+                                remoteBridge.startClawBotBridgeIfConfigured(forceRelogin = false)
+                            } else {
+                                showClawBotResult("登录确认但凭据不完整，请重试", isError = true)
+                            }
+                        }
+                        return
+                    }
+                    ClawBotQrPollPhase.EXPIRED -> {
+                        qrRefreshCount++
+                        withContext(Dispatchers.Main) {
+                            if (qrRefreshCount < maxQrRefresh) {
+                                showClawBotResult("二维码已过期，正在刷新…（第 ${qrRefreshCount}/$maxQrRefresh 次）", isError = false)
+                            }
+                        }
+                        break
+                    }
+                    ClawBotQrPollPhase.UNKNOWN -> {
+                        withContext(Dispatchers.Main) {
+                            hideQrCode()
+                            showClawBotResult("收到未知状态，请重试", isError = true)
+                        }
+                        return
+                    }
+                }
+            }
+
+            if (System.currentTimeMillis() >= deadline) {
+                qrRefreshCount++
+                withContext(Dispatchers.Main) {
+                    if (qrRefreshCount >= maxQrRefresh) {
+                        hideQrCode()
+                        showClawBotResult("登录超时，请重新扫码", isError = true)
+                    } else {
+                        showClawBotResult("等待超时，正在刷新二维码…", isError = false)
+                    }
+                }
+            }
+        }
+
+        if (qrRefreshCount >= maxQrRefresh) {
+            withContext(Dispatchers.Main) {
+                hideQrCode()
+                showClawBotResult("二维码多次过期，请稍后重试", isError = true)
+            }
+        }
+    }
+
+    private fun cancelClawBotLogin() {
+        clawBotLoginJob?.cancel()
+        clawBotLoginJob = null
+    }
+
+    private fun hideQrCode() {
+        binding.ivClawBotQr.visibility = View.GONE
+        binding.ivClawBotQr.setImageBitmap(null)
+        binding.tvClawBotQrHint.visibility = View.GONE
+    }
+
+    private fun generateQrBitmap(content: String, size: Int): Bitmap {
+        val hints = mapOf(
+            EncodeHintType.MARGIN to 1,
+            EncodeHintType.ERROR_CORRECTION to ErrorCorrectionLevel.M
+        )
+        val bitMatrix = MultiFormatWriter().encode(content, BarcodeFormat.QR_CODE, size, size, hints)
+        val width = bitMatrix.width
+        val height = bitMatrix.height
+        val pixels = IntArray(width * height)
+        for (y in 0 until height) {
+            for (x in 0 until width) {
+                pixels[y * width + x] = if (bitMatrix[x, y]) Color.BLACK else Color.WHITE
+            }
+        }
+        return Bitmap.createBitmap(pixels, width, height, Bitmap.Config.ARGB_8888)
+    }
+
+    // endregion
+
+    // region ClawBot Status
+
+    private fun observeClawBotStatusLine() {
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                combine(
+                    remoteBridge.clawBotStatus,
+                    remoteBridge.clawBotLoginStatus
+                ) { bridge, login -> bridge to login }.collect { (bridge, login) ->
+                    binding.tvClawBotStatus.text = formatClawBotStatusLine(bridge, login)
+                    updateClawBotLoginButtonText(login)
+                }
+            }
+        }
+    }
+
+    private fun formatClawBotStatusLine(bridge: BridgeStatus, login: ClawBotLoginStatus): String {
+        val b = when (bridge) {
+            BridgeStatus.NOT_CONFIGURED -> "未配置"
+            BridgeStatus.STOPPED -> "已停止"
+            BridgeStatus.CONNECTED -> "已连接"
+            BridgeStatus.DISCONNECTED -> "未连接"
+        }
+        val l = when (login) {
+            ClawBotLoginStatus.NOT_CONFIGURED -> "未配置"
+            ClawBotLoginStatus.LOGIN_REQUIRED -> "需登录"
+            ClawBotLoginStatus.QR_READY -> "二维码就绪"
+            ClawBotLoginStatus.WAITING_CONFIRM -> "待确认"
+            ClawBotLoginStatus.CONNECTED -> "已登录"
+            ClawBotLoginStatus.DISCONNECTED -> "已断开"
+            ClawBotLoginStatus.STOPPED -> "已停止"
+        }
+        return "桥接: $b · 登录: $l"
+    }
+
+    private fun updateClawBotLoginButtonText(login: ClawBotLoginStatus) {
+        if (clawBotLoginJob?.isActive == true) return
+        binding.btnClawBotLogin.text = when (login) {
+            ClawBotLoginStatus.CONNECTED -> "重新登录"
+            else -> "扫码登录"
+        }
+    }
+
+    private fun showClawBotResult(text: String, isError: Boolean) {
+        binding.tvClawBotResult.apply {
+            visibility = View.VISIBLE
+            this.text = text
+            setTextColor(getColor(if (isError) android.R.color.holo_red_dark else android.R.color.holo_green_dark))
+        }
+    }
+
+    // endregion
+
+    // region AI Provider Config
 
     private fun setupProviderSpinner() {
         val providers = listOf("Kimi Code", "Moonshot", "OpenAI")
@@ -76,8 +315,8 @@ class AiSettingsActivity : AppCompatActivity() {
         val savedKey = aiConfigService.loadProviderKey(currentProvider)
         binding.etApiKey.setText(savedKey.ifEmpty { aiConfigService.apiKey })
         binding.etModel.setText(aiConfigService.model, false)
-        binding.etTgToken.setText(aiConfigService.tgToken)
-        val savedChatId = aiConfigService.getTgChatId()
+        binding.etTgToken.setText(channelConfig.tgToken)
+        val savedChatId = channelConfig.getTgChatId()
         binding.etTgChatId.setText(if (savedChatId == 0L) "" else savedChatId.toString())
     }
 
@@ -91,11 +330,13 @@ class AiSettingsActivity : AppCompatActivity() {
             apiKey = apiKey,
             model = binding.etModel.text.toString()
         )
-        aiConfigService.setTgToken(binding.etTgToken.text.toString().trim())
+        channelConfig.setTgToken(binding.etTgToken.text.toString().trim())
         val chatId = binding.etTgChatId.text.toString().trim().toLongOrNull() ?: 0L
-        aiConfigService.setTgChatId(chatId)
+        channelConfig.setTgChatId(chatId)
         finish()
     }
+
+    // endregion
 
     // region 获取模型列表
 

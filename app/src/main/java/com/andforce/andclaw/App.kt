@@ -7,10 +7,13 @@ import com.afwsamples.testdpc.KoinApplication
 import com.andforce.andclaw.db.AppDatabase
 import com.afwsamples.testdpc.policy.locktask.KioskModeHelper
 import com.afwsamples.testdpc.policy.locktask.viewmodule.KioskViewModule
+import com.andforce.andclaw.bridge.RemoteBridgeManager
 import com.andforce.andclaw.service.impl.AppInfoService
 import com.andforce.mdm.center.DeviceStatusViewModel
 import com.base.services.IAiConfigService
 import com.base.services.IAppInfoService
+import com.base.services.IRemoteBridgeService
+import com.base.services.IRemoteChannelConfigService
 import com.base.services.ITgBridgeService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -41,6 +44,10 @@ class App : KoinApplication() {
             single { AppInfoService() } bind IAppInfoService::class
             single<ITgBridgeService> { AgentController }
             single<IAiConfigService> { AgentController }
+            single { RemoteBridgeManager(get()) }
+            single<IRemoteBridgeService> { get<RemoteBridgeManager>() }
+            /** Telegram Token / ChatId 与 ClawBot 相关持久化；与 [IAiConfigService] 的 AI Provider 配置分离。 */
+            single<IRemoteChannelConfigService> { get<RemoteBridgeManager>() }
             single { Room.databaseBuilder(get(), AppDatabase::class.java, "andclaw.db").build() }
             single { get<AppDatabase>().chatMessageDao() }
         }
@@ -54,7 +61,9 @@ class App : KoinApplication() {
         Log.d(TAG, "onCreate")
 
         val db = KoinJavaComponent.get<AppDatabase>(AppDatabase::class.java)
-        AgentController.init(this, db.chatMessageDao())
+        val remoteBridge = KoinJavaComponent.get<IRemoteBridgeService>(IRemoteBridgeService::class.java)
+        AgentController.init(this, db.chatMessageDao(), remoteBridge)
+        remoteBridge.startEligibleBridges()
 
         // 监听DeviceOwner是否开启
         appScope.launch {

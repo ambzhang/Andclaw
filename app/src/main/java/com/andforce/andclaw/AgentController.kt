@@ -20,9 +20,15 @@ import com.afwsamples.testdpc.common.Util
 import com.andforce.andclaw.db.ChatMessageDao
 import com.andforce.andclaw.db.ChatMessageEntity
 import com.google.gson.Gson
+import com.andforce.andclaw.bridge.RemoteOutboundHelper
 import com.base.services.BridgeStatus
 import com.base.services.IAiConfigService
+import com.base.services.IRemoteBridgeService
+import com.base.services.IRemoteChannelConfigService
 import com.base.services.ITgBridgeService
+import com.base.services.RemoteChannel
+import com.base.services.RemoteIncomingMessage
+import com.base.services.RemoteSession
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlin.coroutines.resume
@@ -40,16 +46,24 @@ object AgentController : ITgBridgeService, IAiConfigService {
     private const val PREFS_NAME = "agent_config"
 
     private lateinit var appContext: Context
+    private lateinit var remoteBridge: IRemoteBridgeService
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private val gson = Gson()
 
-    private var tgJob: Job? = null
-    private var tgBotClient: TgBotClient? = null
+    private val channelConfig: IRemoteChannelConfigService
+        get() = remoteBridge as IRemoteChannelConfigService
+
+    /** 远程任务上下文；本地 [startAgent] 会置空，避免误向远程回传。 */
+    private var _activeRemoteSession: RemoteSession? = null
+    val activeRemoteSession: RemoteSession?
+        get() = _activeRemoteSession
+
+    /** 过渡期：与 Telegram 相关的旧代码仍可能读取；由 [activeRemoteSession] 同步。 */
     var tgActiveChatId: Long = 0L
         private set
 
-    private val _bridgeStatus = MutableStateFlow(BridgeStatus.NOT_CONFIGURED)
-    override val bridgeStatus: StateFlow<BridgeStatus> = _bridgeStatus
+    override val bridgeStatus: StateFlow<BridgeStatus>
+        get() = remoteBridge.telegramStatus
 
     private val _messages = MutableStateFlow<List<ChatMessage>>(emptyList())
     val messages: StateFlow<List<ChatMessage>> = _messages
@@ -67,9 +81,35 @@ object AgentController : ITgBridgeService, IAiConfigService {
     private val dpmBridge by lazy { DpmBridge(appContext) }
     private lateinit var chatDao: ChatMessageDao
 
-    fun init(context: Context, dao: ChatMessageDao) {
+    private fun screenshotSuccessMessage(session: RemoteSession?, fileName: String): String {
+        val base = "截图已保存：Pictures/Andclaw/$fileName"
+        return base + when (session?.channel) {
+            RemoteChannel.TELEGRAM -> "（远程已发送到 Telegram）"
+            RemoteChannel.CLAWBOT -> "（ClawBot 暂不支持图片远程回传；本地已保存，应用将尝试向远端发送文本说明）"
+            else -> ""
+        }
+    }
+
+    /** 拍照/录像/录音/录屏等远程回传后的补充说明（与 [RemoteBridgeManager] 媒体策略一致）。 */
+    private fun appendRemoteBinaryMediaNote(session: RemoteSession?, base: String): String {
+        val suffix = when (session?.channel) {
+            RemoteChannel.TELEGRAM -> "（已发送到 Telegram）"
+            RemoteChannel.CLAWBOT -> "（已保存到本地；ClawBot 暂不支持该类型远程回传，应用将尝试向远端发送文本说明）"
+            else -> ""
+        }
+        return base + suffix
+    }
+
+    fun init(context: Context, dao: ChatMessageDao, bridge: IRemoteBridgeService) {
         appContext = context.applicationContext
         chatDao = dao
+        remoteBridge = bridge
+        remoteBridge.setTelegramInboundHandler { msg ->
+            handleTelegramCommand(msg.chatId, msg.messageId, msg.text)
+        }
+        remoteBridge.setClawBotInboundHandler { msg ->
+            handleClawBotCommand(msg)
+        }
         migrateOldProviderKeys()
         restoreConfig()
         loadHistory()
@@ -153,96 +193,107 @@ object AgentController : ITgBridgeService, IAiConfigService {
         return getPrefs().getString("api_key_$provider", "") ?: ""
     }
 
-    override fun getTgChatId(): Long = getPrefs().getLong("tg_allowed_chat_id", 0L)
+    fun getPrefs() = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
-    override fun setTgChatId(chatId: Long) {
-        getPrefs().edit().putLong("tg_allowed_chat_id", chatId).apply()
-    }
-
-    override val tgToken: String
-        get() = getPrefs().getString("tg_token", null) ?: BuildConfig.TG_TOKEN
-
-    override fun setTgToken(token: String) {
-        val oldToken = tgToken
-        getPrefs().edit().putString("tg_token", token).apply()
-        if (token != oldToken) {
-            stopBridge()
-            if (token.isBlank()) {
-                _bridgeStatus.value = BridgeStatus.NOT_CONFIGURED
-            } else {
-                startBridge()
-            }
+    private fun syncLegacyTgChatIdFromSession(session: RemoteSession?) {
+        tgActiveChatId = when {
+            session == null -> 0L
+            session.channel == RemoteChannel.TELEGRAM -> session.sessionKey.toLongOrNull() ?: 0L
+            else -> 0L
         }
     }
-
-    fun getPrefs() = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
     // --- ITgBridgeService ---
 
     override fun startBridge() {
-        val token = tgToken
-        if (token.isBlank()) {
-            _bridgeStatus.value = BridgeStatus.NOT_CONFIGURED
-            return
-        }
-
-        tgBotClient = TgBotClient(token)
-
-        scope.launch(Dispatchers.IO) {
-            val connected = tgBotClient?.getMe() == true
-            _bridgeStatus.value = if (connected) BridgeStatus.CONNECTED else BridgeStatus.DISCONNECTED
-            tgBotClient?.setMyCommands(listOf(
-                "status" to "查看 Andclaw 运行状态",
-                "stop" to "停止当前任务"
-            ))
-        }
-
-        tgJob?.cancel()
-        tgJob = scope.launch(Dispatchers.IO) {
-            while (isActive) {
-                try {
-                    val allowedChatId = getPrefs().getLong("tg_allowed_chat_id", 0L)
-                    val updates = tgBotClient?.poll() ?: emptyList()
-                    for (msg in updates) {
-                        if (allowedChatId != 0L && msg.chatId != allowedChatId) continue
-                        handleTelegramCommand(msg.chatId, msg.messageId, msg.text)
-                    }
-                } catch (_: Exception) {
-                    delay(2000)
-                }
-            }
-        }
+        remoteBridge.startTelegramBridgeIfConfigured()
     }
 
     override fun stopBridge() {
-        tgJob?.cancel()
-        tgJob = null
-        _bridgeStatus.value = BridgeStatus.STOPPED
+        remoteBridge.stopTelegramBridge()
     }
 
     private suspend fun handleTelegramCommand(chatId: Long, msgId: Long, text: String) {
-        tgActiveChatId = chatId
+        val telegramSession = RemoteSession(
+            channel = RemoteChannel.TELEGRAM,
+            sessionKey = chatId.toString(),
+            messageId = msgId.toString(),
+        )
         when (text) {
             "/status" -> {
-                val allowedId = getPrefs().getLong("tg_allowed_chat_id", 0L)
+                val allowedId = channelConfig.getTgChatId()
                 val accessInfo = if (allowedId == 0L) "⚠️ 未设置 Chat ID 白名单" else "✅ Chat ID 已锁定"
                 val agentInfo = if (isAgentRunning) "▶️ Agent 运行中: ${uiState.userInput}" else "⏸ Agent 空闲"
-                tgBotClient?.send(chatId, "Andclaw 状态\n$agentInfo\n$accessInfo\n你的 Chat ID: $chatId", msgId)
+                val body = "Andclaw 状态\n$agentInfo\n$accessInfo\n你的 Chat ID: $chatId"
+                RemoteOutboundHelper.sendText(
+                    remoteBridge, telegramSession, body, replyToMessageId = msgId
+                )
             }
             "/stop" -> {
                 withContext(Dispatchers.Main) { stopAgent() }
-                tgBotClient?.send(chatId, "✅ 已停止当前任务", msgId)
+                RemoteOutboundHelper.sendText(
+                    remoteBridge, telegramSession, "✅ 已停止当前任务", replyToMessageId = msgId
+                )
             }
             else -> {
-                tgBotClient?.sendTyping(chatId)
-                withContext(Dispatchers.Main) { startAgent(text) }
+                val busy = withContext(Dispatchers.Main) { isAgentRunning to uiState.userInput }
+                if (busy.first) {
+                    RemoteOutboundHelper.sendText(
+                        remoteBridge, telegramSession,
+                        "⏳ Agent 正在执行上一任务，不会开始新任务。请稍后或发送 /stop 停止。进行中的任务：${busy.second}",
+                        replyToMessageId = msgId
+                    )
+                    return
+                }
+                RemoteOutboundHelper.sendTyping(remoteBridge, telegramSession)
+                withContext(Dispatchers.Main) { startAgent(text, remoteSession = telegramSession) }
+            }
+        }
+    }
+
+    private suspend fun handleClawBotCommand(msg: RemoteIncomingMessage) {
+        val clawSession = RemoteSession(
+            channel = RemoteChannel.CLAWBOT,
+            sessionKey = msg.sessionKey,
+            replyToken = msg.replyToken,
+            userId = msg.senderId,
+            messageId = msg.messageId,
+            accountId = msg.accountId,
+        )
+        when (msg.text.trim()) {
+            "/status" -> {
+                val agentInfo = if (isAgentRunning) "▶️ Agent 运行中: ${uiState.userInput}" else "⏸ Agent 空闲"
+                val body = "Andclaw 状态\n$agentInfo\n会话: ${msg.sessionKey}"
+                RemoteOutboundHelper.sendText(remoteBridge, clawSession, body, replyToMessageId = null)
+            }
+            "/stop" -> {
+                withContext(Dispatchers.Main) { stopAgent() }
+                RemoteOutboundHelper.sendText(
+                    remoteBridge, clawSession, "✅ 已停止当前任务", replyToMessageId = null
+                )
+            }
+            else -> {
+                val busy = withContext(Dispatchers.Main) { isAgentRunning to uiState.userInput }
+                if (busy.first) {
+                    RemoteOutboundHelper.sendText(
+                        remoteBridge, clawSession,
+                        "⏳ Agent 正在执行上一任务，不会开始新任务。请稍后或发送 /stop 停止。进行中的任务：${busy.second}",
+                        replyToMessageId = null
+                    )
+                    return
+                }
+                RemoteOutboundHelper.sendTyping(remoteBridge, clawSession)
+                withContext(Dispatchers.Main) { startAgent(msg.text, remoteSession = clawSession) }
             }
         }
     }
 
     // --- Agent Logic ---
 
-    fun startAgent(input: String) {
+    fun startAgent(input: String, remoteSession: RemoteSession? = null) {
+        _activeRemoteSession = remoteSession
+        syncLegacyTgChatIdFromSession(remoteSession)
+
         addMessage("user", input)
         isAgentRunning = true
         uiState = uiState.copy(isRunning = true, userInput = input)
@@ -262,12 +313,14 @@ object AgentController : ITgBridgeService, IAiConfigService {
         isAgentRunning = false
         uiState = uiState.copy(isRunning = false, status = "Agent Stopped.")
         agentJob?.cancel()
+        _activeRemoteSession = null
+        syncLegacyTgChatIdFromSession(null)
     }
 
     private suspend fun executeAgentStep(userInput: String, screenshotBase64: String? = null) {
         if (!isAgentRunning) return
 
-        if (tgActiveChatId != 0L) tgBotClient?.sendTyping(tgActiveChatId)
+        RemoteOutboundHelper.sendTyping(remoteBridge, activeRemoteSession)
 
         val svc = AgentAccessibilityService.instance
         val screenData = svc?.captureScreenHierarchy() ?: "Screen data inaccessible"
@@ -553,15 +606,17 @@ object AgentController : ITgBridgeService, IAiConfigService {
                                     }
                                 }
 
-                                if (tgActiveChatId != 0L && tgBotClient != null) {
+                                activeRemoteSession?.let { session ->
                                     val baos = ByteArrayOutputStream()
                                     bitmap!!.compress(Bitmap.CompressFormat.PNG, 100, baos)
-                                    val chatId = tgActiveChatId
-                                    tgBotClient?.sendPhoto(chatId, baos.toByteArray(), fileName, fileName)
+                                    RemoteOutboundHelper.sendPhoto(
+                                        remoteBridge, session,
+                                        baos.toByteArray(), caption = fileName, fileName = fileName
+                                    )
                                 }
 
                                 success = true
-                                outputMsg = "Screenshot saved & sent: Pictures/Andclaw/$fileName"
+                                outputMsg = screenshotSuccessMessage(activeRemoteSession, fileName)
                             } else {
                                 outputMsg = "Screenshot failed (API 30+ required)"
                             }
@@ -629,18 +684,18 @@ object AgentController : ITgBridgeService, IAiConfigService {
                                     success = true
                                     outputMsg = result
 
-                                    if (tgActiveChatId != 0L && tgBotClient != null) {
+                                    activeRemoteSession?.let { session ->
                                         when (cameraAction) {
                                             CameraActivity.ACTION_TAKE_PHOTO -> {
                                                 val uri = CameraActivity.lastPhotoUri
                                                 if (uri != null) {
                                                     try {
                                                         appContext.contentResolver.openInputStream(uri)?.use { input ->
-                                                            tgBotClient?.sendPhoto(
-                                                                tgActiveChatId, input.readBytes(),
-                                                                "photo.jpg", "photo.jpg"
+                                                            RemoteOutboundHelper.sendPhoto(
+                                                                remoteBridge, session,
+                                                                input.readBytes(), caption = null, fileName = "photo.jpg"
                                                             )
-                                                            outputMsg += " (已发送到 Telegram)"
+                                                            outputMsg = appendRemoteBinaryMediaNote(session, result)
                                                         }
                                                     } catch (_: Exception) { }
                                                 }
@@ -650,11 +705,11 @@ object AgentController : ITgBridgeService, IAiConfigService {
                                                 if (uri != null) {
                                                     try {
                                                         appContext.contentResolver.openInputStream(uri)?.use { input ->
-                                                            tgBotClient?.sendVideo(
-                                                                tgActiveChatId, input.readBytes(),
-                                                                "video.mp4", "video.mp4"
+                                                            RemoteOutboundHelper.sendVideo(
+                                                                remoteBridge, session,
+                                                                input.readBytes(), caption = null, fileName = "video.mp4"
                                                             )
-                                                            outputMsg += " (已发送到 Telegram)"
+                                                            outputMsg = appendRemoteBinaryMediaNote(session, result)
                                                         }
                                                     } catch (_: Exception) { }
                                                 }
@@ -695,16 +750,16 @@ object AgentController : ITgBridgeService, IAiConfigService {
                                     success = true
                                     outputMsg = result
 
-                                    if (tgActiveChatId != 0L && tgBotClient != null) {
+                                    activeRemoteSession?.let { session ->
                                         val uri = AudioRecordActivity.lastAudioUri
                                         if (uri != null) {
                                             try {
                                                 appContext.contentResolver.openInputStream(uri)?.use { input ->
-                                                    tgBotClient?.sendAudio(
-                                                        tgActiveChatId, input.readBytes(),
-                                                        "audio.m4a", "audio.m4a"
+                                                    RemoteOutboundHelper.sendAudio(
+                                                        remoteBridge, session,
+                                                        input.readBytes(), caption = null, fileName = "audio.m4a"
                                                     )
-                                                    outputMsg += " (已发送到 Telegram)"
+                                                    outputMsg = appendRemoteBinaryMediaNote(session, result)
                                                 }
                                             } catch (_: Exception) { }
                                         }
@@ -730,19 +785,22 @@ object AgentController : ITgBridgeService, IAiConfigService {
                                 delay(2000)
                                 success = true
                                 val filePath = ScreenRecordService.lastRecordedFile
-                                outputMsg = "录屏已停止, 文件: ${filePath ?: "unknown"}"
+                                val stoppedMsg = "录屏已停止, 文件: ${filePath ?: "unknown"}"
+                                outputMsg = stoppedMsg
 
-                                if (filePath != null && tgActiveChatId != 0L && tgBotClient != null) {
-                                    try {
-                                        val file = File(filePath)
-                                        if (file.exists()) {
-                                            tgBotClient?.sendVideo(
-                                                tgActiveChatId, file.readBytes(),
-                                                file.name, file.name
-                                            )
-                                            outputMsg += " (已发送到 Telegram)"
-                                        }
-                                    } catch (_: Exception) { }
+                                if (filePath != null) {
+                                    activeRemoteSession?.let { session ->
+                                        try {
+                                            val file = File(filePath)
+                                            if (file.exists()) {
+                                                RemoteOutboundHelper.sendVideo(
+                                                    remoteBridge, session,
+                                                    file.readBytes(), caption = null, fileName = file.name
+                                                )
+                                                outputMsg = appendRemoteBinaryMediaNote(session, stoppedMsg)
+                                            }
+                                        } catch (_: Exception) { }
+                                    }
                                 }
                             }
                         } else {
@@ -918,9 +976,11 @@ object AgentController : ITgBridgeService, IAiConfigService {
             }
         }
 
-        if (role != "user" && tgActiveChatId != 0L) {
+        if (RemoteOutboundHelper.shouldAttemptRemoteEcho(role, activeRemoteSession)) {
             scope.launch(Dispatchers.IO) {
-                tgBotClient?.send(tgActiveChatId, "[$role] $content")
+                RemoteOutboundHelper.sendText(
+                    remoteBridge, activeRemoteSession, "[$role] $content"
+                )
             }
         }
     }
