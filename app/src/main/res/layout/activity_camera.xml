@@ -3,18 +3,18 @@
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@android:color/black"
+    android:background="@color/background"
     android:orientation="vertical">
 
     <com.google.android.material.appbar.MaterialToolbar
         android:id="@+id/toolbar"
         android:layout_width="match_parent"
         android:layout_height="?attr/actionBarSize"
-        android:background="@android:color/black"
+        android:background="@color/background"
         app:navigationIcon="@drawable/ic_close"
-        app:navigationIconTint="@android:color/white"
+        app:navigationIconTint="@color/text_primary"
         app:title="相机"
-        app:titleTextColor="@android:color/white" />
+        app:titleTextColor="@color/text_primary" />
 
     <androidx.camera.view.PreviewView
         android:id="@+id/viewFinder"
@@ -25,19 +25,19 @@
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:background="@android:color/black"
+        android:background="@color/background"
         android:gravity="center"
         android:orientation="vertical"
-        android:padding="16dp">
+        android:padding="@dimen/spacing_md">
 
         <TextView
             android:id="@+id/tvStatus"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginBottom="12dp"
+            android:layout_marginBottom="@dimen/spacing_sm"
             android:text="相机就绪"
-            android:textColor="@android:color/white"
-            android:textSize="14sp" />
+            android:textAppearance="?attr/textAppearanceBodyMedium"
+            android:textColor="@color/text_primary" />
 
         <LinearLayout
             android:layout_width="match_parent"

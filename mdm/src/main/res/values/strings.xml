@@ -1305,4 +1305,10 @@
     <string name="bootup_notice_content_3">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;如您已知悉並理解了上述內容，請點擊“確認”按鈕。</string>
     <string name="bootup_notice_button">確認</string>
 
+    <!-- VPN Activity strings -->
+    <string name="send_get">发送get</string>
+    <string name="start">Start</string>
+    <string name="end">End</string>
+    <string name="update">更新</string>
+
 </resources>

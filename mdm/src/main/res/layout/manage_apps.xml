@@ -19,7 +19,8 @@ limitations under the License.
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:padding="10dip"
+        android:padding="@dimen/spacing_sm"
+        android:background="@color/mdm_background"
         android:id="@+id/managed_apps_container">
 
     <LinearLayout android:id="@+id/header_view"
@@ -29,13 +30,13 @@ limitations under the License.
             android:layout_alignParentTop="true">
 
         <TextView android:id="@+id/header_text"
-                android:paddingStart="14dip"
+                android:paddingStart="@dimen/spacing_md"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:textColor="?android:attr/textColorPrimary"
-                android:textSize="16sp"
-                android:paddingTop="10dp"
-                android:paddingEnd="4dp"
+                android:textAppearance="?attr/textAppearanceBodyLarge"
+                android:textColor="@color/mdm_text_primary"
+                android:paddingTop="@dimen/spacing_sm"
+                android:paddingEnd="@dimen/spacing_xs"
                 android:visibility="gone" />
 
         <Spinner
@@ -44,22 +45,24 @@ limitations under the License.
                 android:layout_height="wrap_content" />
     </LinearLayout>
 
-    <Button android:id="@id/add_new_row"
-            android:layout_width="50dip"
-            android:layout_height="50dip"
+    <com.google.android.material.button.MaterialButton
+            android:id="@id/add_new_row"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
             android:layout_alignParentTop="true"
-            android:layout_alignParentRight="true"
-            android:text="@string/plus" />
+            android:layout_alignParentEnd="true"
+            android:text="@string/plus"
+            style="@style/Widget.Material3.Button.Icon" />
 
     <TextView
         android:id="@+id/error_message"
         android:layout_below="@id/header_view"
         android:layout_above="@+id/load_default_button"
-        android:visibility="gone"
-        android:layout_height="wrap_content"
-        android:layout_width="match_parent"
-        android:paddingTop="16dp"
-        android:paddingBottom="4dp" />
+android:visibility="gone"
+            android:layout_height="wrap_content"
+            android:layout_width="match_parent"
+            android:paddingTop="@dimen/spacing_md"
+            android:paddingBottom="@dimen/spacing_xs" />
 
     <ListView
             android:id="@+id/app_list_view"
@@ -67,17 +70,18 @@ limitations under the License.
             android:layout_above="@+id/load_default_button"
             android:layout_height="wrap_content"
             android:layout_width="match_parent"
-            android:paddingTop="16dp"
-            android:paddingBottom="4dp"
+            android:paddingTop="@dimen/spacing_md"
+            android:paddingBottom="@dimen/spacing_xs"
             android:scrollbarStyle="outsideInset" />
 
-    <Button
+    <com.google.android.material.button.MaterialButton
             android:id="@id/load_default_button"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_above="@+id/manage_app_button_container"
             android:text="@string/load_manifest_restrictions"
-            android:visibility="gone" />
+            android:visibility="gone"
+            style="@style/Widget.Material3.Button" />
 
     <LinearLayout
             android:id="@id/manage_app_button_container"
@@ -85,22 +89,20 @@ limitations under the License.
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_alignParentBottom="true">
-        <Button
+        <com.google.android.material.button.MaterialButton
                 android:id="@+id/reset_app"
-                android:layout_centerHorizontal="true"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/reset"
                 android:layout_weight="1"
-            tools:ignore="ObsoleteLayoutParam" />
+                style="@style/Widget.Material3.Button" />
 
-        <Button
+        <com.google.android.material.button.MaterialButton
                 android:id="@+id/save_app"
-                android:layout_centerHorizontal="true"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/save"
                 android:layout_weight="1"
-            tools:ignore="ObsoleteLayoutParam" />
+                style="@style/Widget.Material3.Button" />
     </LinearLayout>
 </RelativeLayout>

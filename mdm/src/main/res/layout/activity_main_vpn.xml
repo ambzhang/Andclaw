@@ -1,84 +1,63 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:orientation="vertical"
     android:id="@+id/activity_main"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:focusable="true"
     android:focusableInTouchMode="true"
-    >
+    android:background="@color/mdm_background">
 
-
-    <Button
+    <com.google.android.material.button.MaterialButton
         android:id="@+id/http_get"
-        android:text="发送get"
+        android:text="@string/send_get"
         android:layout_width="wrap_content"
-        android:layout_height="wrap_content"/>
+        android:layout_height="wrap_content"
+        android:layout_margin="@dimen/spacing_sm"
+        style="@style/Widget.Material3.Button" />
 
-
-    <RelativeLayout
+    <LinearLayout
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_gravity="center_horizontal"
-        android:layout_marginTop="23dp">
-        <Button
+        android:layout_marginTop="@dimen/spacing_md"
+        android:orientation="horizontal">
+
+        <com.google.android.material.button.MaterialButton
             android:id="@+id/btnStart"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
+            android:text="@string/start"
+            style="@style/Widget.Material3.Button" />
 
-            android:text="Start" />
-        <Button
+        <com.google.android.material.button.MaterialButton
             android:id="@+id/btnEnd"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_toRightOf="@+id/btnStart"
-            android:text="End" />
+            android:layout_marginStart="@dimen/spacing_sm"
+            android:text="@string/end"
+            style="@style/Widget.Material3.Button" />
 
-    </RelativeLayout >
+    </LinearLayout>
 
-
-
-
-    <RelativeLayout
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/btnHostWrite"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_gravity="center_horizontal"
-        android:layout_marginTop="13dp">
+        android:layout_marginTop="@dimen/spacing_sm"
+        android:text="@string/update"
+        style="@style/Widget.Material3.Button" />
 
-        <Button
-            android:id="@+id/btnHostWrite"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="更新" />
-
-    </RelativeLayout >
-  <!--  <TextView
+    <com.google.android.material.textfield.TextInputEditText
         android:id="@+id/hostConfig"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:layout_marginTop="23dp"
-        android:layout_marginLeft="10dp"
-        android:layout_marginRight="10dp"
-        android:singleLine="false"
-        android:ellipsize="marquee"
-        android:focusable="true"
-        android:focusableInTouchMode="true"
-        /> -->
-    <EditText
-        android:id="@+id/hostConfig"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:layout_marginTop="3dp"
-        android:layout_marginLeft="10dp"
-        android:layout_marginBottom="10dp"
-        android:layout_marginRight="10dp"
-        android:paddingLeft="2dp"
-        android:textSize="20sp"
-        android:gravity="top|left"
+        android:layout_margin="@dimen/spacing_md"
+        android:textSize="16sp"
+        android:gravity="top|start"
         android:scrollbars="vertical"
         android:background="@drawable/edit_bg" />
-        <!-- android:background="@null" -->
-
-
 
 </LinearLayout>
