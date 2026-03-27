@@ -59,6 +59,17 @@
 [![演示视频](docs/demo_cover.png)](https://www.bilibili.com/video/BV1k8w4zeEL7)  
 [![演示视频](docs/ScreenShot_2026-03-17_202610_426.png)](https://www.bilibili.com/video/BV1WtwKzLEXd)
 
+### 界面截图
+
+<p align="center">
+  <b>主界面</b>：设备管理员模式、网络状态、远程连接通道（Telegram / 飞书 / ClawBot）与对话记录入口<br>
+  <img src="docs/screenshots/b726d0df2b63d8b7cc2b83eacec0c2c4.png" alt="Andclaw 主界面：设备管理与远程连接" width="320"><br><br>
+  <b>远程连接</b>：单通道配置；图示为 ClawBot（微信）桥接已连接、已登录<br>
+  <img src="docs/screenshots/03583636640228432acca1430b1acec2.png" alt="远程连接设置页：ClawBot 与桥接状态" width="320"><br><br>
+  <b>AI Agent</b>：本地对话界面与任务执行进度、完成反馈<br>
+  <img src="docs/screenshots/8b3b7975a19d1911e651a966ba48504d.png" alt="Andclaw AI Agent 对话界面" width="320">
+</p>
+
 ---
 
 ## 🚀 快速开始
