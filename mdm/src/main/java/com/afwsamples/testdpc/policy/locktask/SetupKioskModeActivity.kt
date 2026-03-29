@@ -203,6 +203,7 @@ open class SetupKioskModeActivity : AppCompatActivity() {
         R.id.chip_telegram -> RemoteChannel.TELEGRAM
         R.id.chip_feishu -> RemoteChannel.FEISHU
         R.id.chip_clawbot -> RemoteChannel.CLAWBOT
+        R.id.chip_local_server -> RemoteChannel.LOCAL_SERVER
         else -> null
     }
 
@@ -213,6 +214,7 @@ open class SetupKioskModeActivity : AppCompatActivity() {
                 RemoteChannel.TELEGRAM -> group.check(R.id.chip_telegram)
                 RemoteChannel.FEISHU -> group.check(R.id.chip_feishu)
                 RemoteChannel.CLAWBOT -> group.check(R.id.chip_clawbot)
+                RemoteChannel.LOCAL_SERVER -> group.check(R.id.chip_local_server)
             }
             group.setOnCheckedChangeListener(kioskChipListener)
         }
@@ -222,10 +224,12 @@ open class SetupKioskModeActivity : AppCompatActivity() {
         val tg = remoteBridgeService.telegramStatus.value
         val fs = remoteBridgeService.feishuStatus.value
         val cb = remoteBridgeService.clawBotStatus.value
+        val ls = remoteBridgeService.localServerStatus.value
         return when (active) {
             RemoteChannel.TELEGRAM -> tg == BridgeStatus.NOT_CONFIGURED || tg == BridgeStatus.DISCONNECTED
             RemoteChannel.FEISHU -> fs == BridgeStatus.NOT_CONFIGURED || fs == BridgeStatus.DISCONNECTED
             RemoteChannel.CLAWBOT -> cb == BridgeStatus.NOT_CONFIGURED || cb == BridgeStatus.DISCONNECTED
+            RemoteChannel.LOCAL_SERVER -> ls == BridgeStatus.NOT_CONFIGURED || ls == BridgeStatus.DISCONNECTED
         }
     }
 
@@ -239,6 +243,7 @@ open class SetupKioskModeActivity : AppCompatActivity() {
         RemoteChannel.TELEGRAM -> bridgeStatusLabel(tg)
         RemoteChannel.FEISHU -> bridgeStatusLabel(fs)
         RemoteChannel.CLAWBOT -> formatClawBotKioskLine(cb, cbLogin)
+        RemoteChannel.LOCAL_SERVER -> bridgeStatusLabel(remoteBridgeService.localServerStatus.value)
     }
 
     private fun bridgeStatusLabel(status: BridgeStatus): String = when (status) {

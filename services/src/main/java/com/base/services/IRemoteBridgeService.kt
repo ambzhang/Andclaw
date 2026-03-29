@@ -7,6 +7,7 @@ interface IRemoteBridgeService {
     val clawBotStatus: StateFlow<BridgeStatus>
     val clawBotLoginStatus: StateFlow<ClawBotLoginStatus>
     val feishuStatus: StateFlow<BridgeStatus>
+    val localServerStatus: StateFlow<BridgeStatus>
 
     fun startEligibleBridges()
     fun stopAllBridges()
@@ -15,6 +16,8 @@ interface IRemoteBridgeService {
     fun startClawBotBridgeIfConfigured(forceRelogin: Boolean = false)
     fun startFeishuBridgeIfConfigured()
     fun stopFeishuBridge()
+    fun startLocalServerBridgeIfConfigured()
+    fun stopLocalServerBridge()
 
     fun setTelegramInboundHandler(handler: suspend (TgInboundMessage) -> Unit) {}
 

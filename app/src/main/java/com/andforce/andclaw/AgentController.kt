@@ -116,6 +116,10 @@ object AgentController : ITgBridgeService, IAiConfigService {
         remoteBridge.setFeishuInboundHandler { msg ->
             handleFeishuCommand(msg)
         }
+        // 注册本地服务器入站处理器
+        (bridge as? com.andforce.andclaw.bridge.RemoteBridgeManager)?.setLocalServerInboundHandler { msg ->
+            handleLocalServerCommand(msg)
+        }
         migrateOldProviderKeys()
         restoreConfig()
         loadHistory()
@@ -290,6 +294,49 @@ object AgentController : ITgBridgeService, IAiConfigService {
                 }
                 RemoteOutboundHelper.sendTyping(remoteBridge, clawSession)
                 withContext(Dispatchers.Main) { startAgent(msg.text, remoteSession = clawSession) }
+            }
+        }
+    }
+
+    private suspend fun handleLocalServerCommand(msg: RemoteIncomingMessage) {
+        Log.d(TAG, "LocalServer command received: ${msg.text.take(100)}, deviceId=${msg.sessionKey}")
+        val localSession = RemoteSession(
+            channel = RemoteChannel.LOCAL_SERVER,
+            sessionKey = msg.sessionKey,
+            messageId = msg.messageId,
+        )
+        when (msg.text.trim()) {
+            "/status" -> {
+                val agentInfo = if (isAgentRunning) "▶️ Agent 运行中: ${uiState.userInput}" else "⏸ Agent 空闲"
+                val body = "Andclaw 状态\n$agentInfo\n设备ID: ${msg.sessionKey}"
+                sendLocalServerResult(msg.messageId, body)
+            }
+            "/stop" -> {
+                withContext(Dispatchers.Main) { stopAgent() }
+                sendLocalServerResult(msg.messageId, "✅ 已停止当前任务")
+            }
+            else -> {
+                val busy = withContext(Dispatchers.Main) { isAgentRunning to uiState.userInput }
+                if (busy.first) {
+                    sendLocalServerResult(
+                        msg.messageId,
+                        "⏳ Agent 正在执行上一任务，不会开始新任务。请稍后或发送 /stop 停止。进行中的任务：${busy.second}"
+                    )
+                    return
+                }
+                withContext(Dispatchers.Main) { startAgent(msg.text, remoteSession = localSession) }
+            }
+        }
+    }
+
+    private fun sendLocalServerResult(commandId: String, text: String) {
+        scope.launch(Dispatchers.IO) {
+            try {
+                (remoteBridge as? com.andforce.andclaw.bridge.RemoteBridgeManager)
+                    ?.getLocalServerBridge()
+                    ?.sendResult(commandId, text)
+            } catch (e: Exception) {
+                Log.w(TAG, "sendLocalServerResult failed: ${e.message}")
             }
         }
     }

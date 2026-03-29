@@ -8,6 +8,7 @@ import com.andforce.andclaw.bridge.clawbot.ClawBotBridge
 import com.andforce.andclaw.bridge.clawbot.buildClawBotAuthStateFromConfirmed
 import com.andforce.andclaw.bridge.clawbot.isCompleteForBridge
 import com.andforce.andclaw.bridge.feishu.FeishuBridge
+import com.andforce.andclaw.bridge.LocalServerBridge
 import com.base.services.BridgeStatus
 import com.base.services.ClawBotAuthState
 import com.base.services.ClawBotDefaults
@@ -59,6 +60,9 @@ class RemoteBridgeManager(
     private val _feishuStatus = MutableStateFlow(BridgeStatus.NOT_CONFIGURED)
     override val feishuStatus: StateFlow<BridgeStatus> = _feishuStatus.asStateFlow()
 
+    private val _localServerStatus = MutableStateFlow(BridgeStatus.NOT_CONFIGURED)
+    override val localServerStatus: StateFlow<BridgeStatus> = _localServerStatus.asStateFlow()
+
     private val _activeRemoteChannel = MutableStateFlow(RemoteChannel.TELEGRAM)
     override val activeRemoteChannel: StateFlow<RemoteChannel> = _activeRemoteChannel.asStateFlow()
 
@@ -79,6 +83,10 @@ class RemoteBridgeManager(
     private var feishuBridge: FeishuBridge? = null
     private var feishuBridgeActiveAppId: String? = null
     private var feishuInboundHandler: (suspend (FeishuInboundMessage) -> Unit)? = null
+
+    private var localServerBridge: LocalServerBridge? = null
+    private var localServerBridgeActiveKey: String? = null
+    private var localServerInboundHandler: (suspend (RemoteIncomingMessage) -> Unit)? = null
 
     private val clawBotApiClient = ClawBotApiClient()
 
@@ -116,10 +124,12 @@ class RemoteBridgeManager(
         stopTelegramBridge()
         stopClawBotBridgeInternal()
         stopFeishuBridgeInternal()
+        stopLocalServerBridgeInternal()
         when (_activeRemoteChannel.value) {
             RemoteChannel.TELEGRAM -> startTelegramBridgeIfConfigured()
             RemoteChannel.CLAWBOT -> startClawBotBridgeIfConfigured(forceRelogin = false)
             RemoteChannel.FEISHU -> startFeishuBridgeIfConfigured()
+            RemoteChannel.LOCAL_SERVER -> startLocalServerBridgeIfConfigured()
         }
     }
 
@@ -129,6 +139,10 @@ class RemoteBridgeManager(
 
     override fun setClawBotInboundHandler(handler: suspend (RemoteIncomingMessage) -> Unit) {
         clawBotInboundHandler = handler
+    }
+
+    fun setLocalServerInboundHandler(handler: suspend (RemoteIncomingMessage) -> Unit) {
+        localServerInboundHandler = handler
     }
 
     override fun setFeishuInboundHandler(handler: suspend (FeishuInboundMessage) -> Unit) {
@@ -143,6 +157,7 @@ class RemoteBridgeManager(
         stopTelegramBridge()
         stopClawBotBridgeInternal()
         stopFeishuBridgeInternal()
+        stopLocalServerBridgeInternal()
     }
 
     override fun startTelegramBridgeIfConfigured() {
@@ -314,6 +329,7 @@ class RemoteBridgeManager(
             }
             RemoteChannel.CLAWBOT -> clawBotBridge?.sendTyping(session)
             RemoteChannel.FEISHU -> feishuBridge?.sendTyping(session)
+            RemoteChannel.LOCAL_SERVER -> { /* 本地服务器不需要 typing 状态 */ }
         }
     }
 
@@ -326,6 +342,9 @@ class RemoteBridgeManager(
             }
             RemoteChannel.CLAWBOT -> clawBotBridge?.sendText(session, text)
             RemoteChannel.FEISHU -> feishuBridge?.sendText(session, text)
+            RemoteChannel.LOCAL_SERVER -> {
+                localServerBridge?.sendText(session.messageId ?: "", text)
+            }
         }
     }
 
@@ -352,10 +371,9 @@ class RemoteBridgeManager(
             RemoteChannel.FEISHU -> {
                 feishuBridge?.sendPhoto(session, photoBytes, caption, fileName)
             }
-        }
-    }
-
-    override suspend fun sendVideo(
+            RemoteChannel.LOCAL_SERVER -> {
+                localServerBridge?.sendText(session.messageId ?: "", "[图片] ${caption ?: fileName}")
+            }
         session: RemoteSession,
         videoBytes: ByteArray,
         caption: String?,
@@ -379,10 +397,9 @@ class RemoteBridgeManager(
                 val text = "[视频已保存到本地] $fileName${caption?.let { " - $it" } ?: ""}"
                 feishuBridge?.sendText(session, text)
             }
-        }
-    }
-
-    override suspend fun sendAudio(
+            RemoteChannel.LOCAL_SERVER -> {
+                localServerBridge?.sendText(session.messageId ?: "", "[视频] ${caption ?: fileName}")
+            }
         session: RemoteSession,
         audioBytes: ByteArray,
         caption: String?,
@@ -406,11 +423,9 @@ class RemoteBridgeManager(
                 val text = "[音频已保存到本地] $fileName${caption?.let { " - $it" } ?: ""}"
                 feishuBridge?.sendText(session, text)
             }
-        }
-    }
-
-    override val tgToken: String
-        get() = agentPrefs.getString(KEY_TG_TOKEN, null) ?: BuildConfig.TG_TOKEN
+            RemoteChannel.LOCAL_SERVER -> {
+                localServerBridge?.sendText(session.messageId ?: "", "[音频] ${caption ?: fileName}")
+            }        get() = agentPrefs.getString(KEY_TG_TOKEN, null) ?: BuildConfig.TG_TOKEN
 
     override fun setTgToken(token: String) {
         val oldToken = tgToken
@@ -522,6 +537,84 @@ class RemoteBridgeManager(
         }
     }
 
+    override fun getLocalServerHost(): String =
+        channelPrefs.getString(KEY_LOCAL_SERVER_HOST, "") ?: ""
+
+    override fun setLocalServerHost(host: String) {
+        channelPrefs.edit().putString(KEY_LOCAL_SERVER_HOST, host).apply()
+        if (getActiveRemoteChannel() == RemoteChannel.LOCAL_SERVER) {
+            stopLocalServerBridgeInternal()
+            startLocalServerBridgeIfConfigured()
+        }
+    }
+
+    override fun getLocalServerPort(): Int =
+        channelPrefs.getInt(KEY_LOCAL_SERVER_PORT, 8080)
+
+    override fun setLocalServerPort(port: Int) {
+        channelPrefs.edit().putInt(KEY_LOCAL_SERVER_PORT, port).apply()
+        if (getActiveRemoteChannel() == RemoteChannel.LOCAL_SERVER) {
+            stopLocalServerBridgeInternal()
+            startLocalServerBridgeIfConfigured()
+        }
+    }
+
+    override fun startLocalServerBridgeIfConfigured() {
+        val host = getLocalServerHost().trim()
+        val port = getLocalServerPort()
+        if (host.isBlank() || port <= 0) {
+            stopLocalServerBridgeInternal()
+            _localServerStatus.value = BridgeStatus.NOT_CONFIGURED
+            return
+        }
+        val key = "$host:$port"
+        if (localServerBridge != null && localServerBridgeActiveKey == key) return
+
+        localServerBridge?.stop()
+        localServerBridge = null
+        localServerBridgeActiveKey = null
+
+        val bridge = LocalServerBridge(
+            context = context,
+            scope = scope,
+            getHost = { getLocalServerHost() },
+            getPort = { getLocalServerPort() },
+            onInbound = { msg ->
+                localServerInboundHandler?.invoke(msg) ?: Unit
+            },
+            onConnectionStatus = { status -> _localServerStatus.value = status }
+        )
+        localServerBridge = bridge
+        localServerBridgeActiveKey = key
+        bridge.start()
+    }
+
+    override fun stopLocalServerBridge() {
+        stopLocalServerBridgeInternal()
+    }
+
+    private fun stopLocalServerBridgeInternal() {
+        localServerBridge?.stop()
+        localServerBridge = null
+        localServerBridgeActiveKey = null
+        _localServerStatus.value = BridgeStatus.STOPPED
+    }
+
+    fun getLocalServerBridge(): LocalServerBridge? = localServerBridge
+        val oldSecret = getFeishuAppSecret()
+        channelPrefs.edit().putString(KEY_FEISHU_APP_SECRET, secret).apply()
+        if (secret.trim() != oldSecret.trim() && getFeishuAppId().isNotBlank() &&
+            getActiveRemoteChannel() == RemoteChannel.FEISHU
+        ) {
+            stopFeishuBridgeInternal()
+            if (secret.isNotBlank()) {
+                startFeishuBridgeIfConfigured()
+            } else {
+                _feishuStatus.value = BridgeStatus.NOT_CONFIGURED
+            }
+        }
+    }
+
     /**
      * 旧版 [RemoteChannelPreferences] 中曾单独存 Telegram；迁移到 agent_config，避免丢配置。
      */
@@ -567,6 +660,8 @@ class RemoteBridgeManager(
         const val KEY_FEISHU_APP_ID = "feishu_app_id"
         const val KEY_FEISHU_APP_SECRET = "feishu_app_secret"
         const val KEY_ACTIVE_REMOTE_CHANNEL = "active_remote_channel"
+        const val KEY_LOCAL_SERVER_HOST = "local_server_host"
+        const val KEY_LOCAL_SERVER_PORT = "local_server_port"
 
         const val JSON_BOT_TOKEN = "botToken"
         const val JSON_BASE_URL = "baseUrl"

@@ -100,6 +100,13 @@
                                 android:layout_height="wrap_content"
                                 android:text="ClawBot" />
 
+                            <com.google.android.material.chip.Chip
+                                android:id="@+id/chip_local_server"
+                                style="@style/Widget.Material3.Chip.Filter"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="本地服务器" />
+
                         </com.google.android.material.chip.ChipGroup>
 
                     </LinearLayout>
@@ -367,6 +374,108 @@
 
                         <TextView
                             android:id="@+id/tvFeishuTestResult"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="8dp"
+                            android:textAppearance="@style/TextAppearance.Mdm.Caption"
+                            android:visibility="gone" />
+
+                    </LinearLayout>
+
+                </com.google.android.material.card.MaterialCardView>
+
+                </com.google.android.material.card.MaterialCardView>
+
+                <!-- 本地服务器配置卡片 -->
+                <com.google.android.material.card.MaterialCardView
+                    android:id="@+id/card_local_server_config"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="@dimen/activity_vertical_margin"
+                    android:visibility="gone"
+                    app:cardBackgroundColor="@color/mdm_card_background"
+                    app:cardCornerRadius="@dimen/card_corner_radius"
+                    app:cardElevation="@dimen/card_elevation"
+                    app:strokeColor="@color/mdm_card_border"
+                    app:strokeWidth="1dp">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:padding="16dp">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="本地服务器配置"
+                            android:textAppearance="@style/TextAppearance.Mdm.Title"
+                            android:textColor="@color/mdm_primary" />
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="8dp"
+                            android:text="手机与电脑在同一局域网，填写电脑的局域网 IP 和服务器端口。手机信息将在连接时自动上报。"
+                            android:textAppearance="@style/TextAppearance.Mdm.Body"
+                            android:textColor="@color/mdm_text_secondary" />
+
+                        <TextView
+                            android:id="@+id/tvLocalServerStatus"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="8dp"
+                            android:textAppearance="@style/TextAppearance.Mdm.Body"
+                            android:textColor="@color/mdm_text_secondary"
+                            tools:text="状态: 未配置" />
+
+                        <com.google.android.material.textfield.TextInputLayout
+                            style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="12dp"
+                            android:hint="服务器 IP（如 192.168.1.100）"
+                            app:boxStrokeColor="@color/mdm_primary"
+                            app:hintTextColor="@color/mdm_text_secondary">
+
+                            <com.google.android.material.textfield.TextInputEditText
+                                android:id="@+id/etLocalServerHost"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:inputType="textUri"
+                                android:textColor="@color/mdm_text_primary" />
+
+                        </com.google.android.material.textfield.TextInputLayout>
+
+                        <com.google.android.material.textfield.TextInputLayout
+                            style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="12dp"
+                            android:hint="服务器端口（默认 8080）"
+                            app:boxStrokeColor="@color/mdm_primary"
+                            app:hintTextColor="@color/mdm_text_secondary">
+
+                            <com.google.android.material.textfield.TextInputEditText
+                                android:id="@+id/etLocalServerPort"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:inputType="number"
+                                android:textColor="@color/mdm_text_primary" />
+
+                        </com.google.android.material.textfield.TextInputLayout>
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnTestLocalServer"
+                            style="@style/Widget.Material3.Button.OutlinedButton"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="12dp"
+                            android:text="测试连接"
+                            app:strokeColor="@color/mdm_primary" />
+
+                        <TextView
+                            android:id="@+id/tvLocalServerTestResult"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="8dp"

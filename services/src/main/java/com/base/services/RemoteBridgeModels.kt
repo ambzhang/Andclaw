@@ -3,7 +3,8 @@ package com.base.services
 enum class RemoteChannel {
     TELEGRAM,
     CLAWBOT,
-    FEISHU
+    FEISHU,
+    LOCAL_SERVER
 }
 
 data class RemoteSession(

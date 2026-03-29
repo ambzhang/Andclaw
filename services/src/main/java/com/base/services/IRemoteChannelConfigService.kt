@@ -29,4 +29,9 @@ interface IRemoteChannelConfigService {
     fun setFeishuAppId(appId: String)
     fun getFeishuAppSecret(): String
     fun setFeishuAppSecret(secret: String)
+
+    fun getLocalServerHost(): String
+    fun setLocalServerHost(host: String)
+    fun getLocalServerPort(): Int
+    fun setLocalServerPort(port: Int)
 }

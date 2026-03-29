@@ -55,6 +55,7 @@ class RemoteChannelSettingsActivity : AppCompatActivity() {
         loadChannelConfig()
         observeClawBotStatusLine()
         observeFeishuStatusLine()
+        observeLocalServerStatusLine()
         setupConnectionModeChips()
 
         binding.btnTestTg.setOnClickListener { testTelegram() }
@@ -69,6 +70,8 @@ class RemoteChannelSettingsActivity : AppCompatActivity() {
         }
 
         binding.btnTestFeishu.setOnClickListener { testFeishu() }
+
+        binding.btnTestLocalServer.setOnClickListener { testLocalServer() }
 
         binding.btnSave.setOnClickListener { saveAndFinish() }
     }
@@ -100,6 +103,7 @@ class RemoteChannelSettingsActivity : AppCompatActivity() {
                 binding.cardTelegramConfig.visibility = View.VISIBLE
                 binding.cardClawbotConfig.visibility = View.GONE
                 binding.cardFeishuConfig.visibility = View.GONE
+                binding.cardLocalServerConfig.visibility = View.GONE
                 cancelClawBotLogin()
                 hideQrCode()
             }
@@ -107,11 +111,21 @@ class RemoteChannelSettingsActivity : AppCompatActivity() {
                 binding.cardTelegramConfig.visibility = View.GONE
                 binding.cardClawbotConfig.visibility = View.VISIBLE
                 binding.cardFeishuConfig.visibility = View.GONE
+                binding.cardLocalServerConfig.visibility = View.GONE
             }
             RemoteChannel.FEISHU -> {
                 binding.cardTelegramConfig.visibility = View.GONE
                 binding.cardClawbotConfig.visibility = View.GONE
                 binding.cardFeishuConfig.visibility = View.VISIBLE
+                binding.cardLocalServerConfig.visibility = View.GONE
+                cancelClawBotLogin()
+                hideQrCode()
+            }
+            RemoteChannel.LOCAL_SERVER -> {
+                binding.cardTelegramConfig.visibility = View.GONE
+                binding.cardClawbotConfig.visibility = View.GONE
+                binding.cardFeishuConfig.visibility = View.GONE
+                binding.cardLocalServerConfig.visibility = View.VISIBLE
                 cancelClawBotLogin()
                 hideQrCode()
             }
@@ -122,6 +136,7 @@ class RemoteChannelSettingsActivity : AppCompatActivity() {
         R.id.chip_telegram -> RemoteChannel.TELEGRAM
         R.id.chip_feishu -> RemoteChannel.FEISHU
         R.id.chip_clawbot -> RemoteChannel.CLAWBOT
+        R.id.chip_local_server -> RemoteChannel.LOCAL_SERVER
         else -> null
     }
 
@@ -131,6 +146,7 @@ class RemoteChannelSettingsActivity : AppCompatActivity() {
             RemoteChannel.TELEGRAM -> binding.chipGroupConnectionMode.check(R.id.chip_telegram)
             RemoteChannel.FEISHU -> binding.chipGroupConnectionMode.check(R.id.chip_feishu)
             RemoteChannel.CLAWBOT -> binding.chipGroupConnectionMode.check(R.id.chip_clawbot)
+            RemoteChannel.LOCAL_SERVER -> binding.chipGroupConnectionMode.check(R.id.chip_local_server)
         }
         binding.chipGroupConnectionMode.setOnCheckedChangeListener(chipListener)
     }
@@ -141,6 +157,9 @@ class RemoteChannelSettingsActivity : AppCompatActivity() {
         binding.etTgChatId.setText(if (savedChatId == 0L) "" else savedChatId.toString())
         binding.etFeishuAppId.setText(channelConfig.getFeishuAppId())
         binding.etFeishuAppSecret.setText(channelConfig.getFeishuAppSecret())
+        binding.etLocalServerHost.setText(channelConfig.getLocalServerHost())
+        val port = channelConfig.getLocalServerPort()
+        binding.etLocalServerPort.setText(if (port == 8080) "" else port.toString())
     }
 
     private fun saveAndFinish() {
@@ -149,6 +168,9 @@ class RemoteChannelSettingsActivity : AppCompatActivity() {
         channelConfig.setTgChatId(chatId)
         channelConfig.setFeishuAppId(binding.etFeishuAppId.text.toString().trim())
         channelConfig.setFeishuAppSecret(binding.etFeishuAppSecret.text.toString().trim())
+        channelConfig.setLocalServerHost(binding.etLocalServerHost.text.toString().trim())
+        val port = binding.etLocalServerPort.text.toString().trim().toIntOrNull() ?: 8080
+        channelConfig.setLocalServerPort(port)
         remoteBridge.startEligibleBridges()
         finish()
     }
@@ -501,6 +523,75 @@ class RemoteChannelSettingsActivity : AppCompatActivity() {
 
     private fun showFeishuResult(text: String, isError: Boolean) {
         binding.tvFeishuTestResult.apply {
+            visibility = View.VISIBLE
+            this.text = text
+            setTextColor(getColor(if (isError) android.R.color.holo_red_dark else android.R.color.holo_green_dark))
+        }
+    }
+
+    // endregion
+
+    // region 本地服务器状态监听和测试
+
+    private fun observeLocalServerStatusLine() {
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                remoteBridge.localServerStatus.collect { status ->
+                    binding.tvLocalServerStatus.text = formatLocalServerStatusLine(status)
+                }
+            }
+        }
+    }
+
+    private fun formatLocalServerStatusLine(status: BridgeStatus): String {
+        return "状态: " + when (status) {
+            BridgeStatus.NOT_CONFIGURED -> "未配置"
+            BridgeStatus.STOPPED -> "已停止"
+            BridgeStatus.CONNECTED -> "已连接 ✓"
+            BridgeStatus.DISCONNECTED -> "未连接"
+        }
+    }
+
+    private fun testLocalServer() {
+        val host = binding.etLocalServerHost.text.toString().trim()
+        val portStr = binding.etLocalServerPort.text.toString().trim()
+        val port = portStr.toIntOrNull() ?: 8080
+        if (host.isEmpty()) {
+            showLocalServerResult("请填写服务器 IP", isError = true)
+            return
+        }
+        binding.btnTestLocalServer.isEnabled = false
+        showLocalServerResult("正在测试连接...", isError = false)
+        lifecycleScope.launch {
+            val result = testLocalServerConnection(host, port)
+            binding.btnTestLocalServer.isEnabled = true
+            showLocalServerResult(result.first, result.second)
+        }
+    }
+
+    private suspend fun testLocalServerConnection(host: String, port: Int): Pair<String, Boolean> =
+        withContext(Dispatchers.IO) {
+            try {
+                val url = "http://$host:$port/ping"
+                val conn = (URL(url).openConnection() as HttpURLConnection).apply {
+                    requestMethod = "GET"
+                    connectTimeout = 5000
+                    readTimeout = 5000
+                }
+                val code = conn.responseCode
+                conn.disconnect()
+                if (code in 200..299) {
+                    "连接成功 ✓ (HTTP $code)" to false
+                } else {
+                    "服务器响应异常 (HTTP $code)，但网络可达" to false
+                }
+            } catch (e: Exception) {
+                "连接失败: ${e.message}" to true
+            }
+        }
+
+    private fun showLocalServerResult(text: String, isError: Boolean) {
+        binding.tvLocalServerTestResult.apply {
             visibility = View.VISIBLE
             this.text = text
             setTextColor(getColor(if (isError) android.R.color.holo_red_dark else android.R.color.holo_green_dark))
